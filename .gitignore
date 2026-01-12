@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+
+# Credentials
+keys/
+*service-account*.json
+*service_account*.json
+*credentials*.json
+*.p12
+*.pem
+*.key
+
+# Generated outputs (images + metadata)
+output/
+base_faces/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

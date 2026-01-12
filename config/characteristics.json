@@ -1,0 +1,23 @@
+{
+  "age": [
+    "young adult",
+    "middle-aged adult",
+    "elderly"
+  ],
+  "gender": [
+    "male",
+    "female"
+  ],
+  "ethnicity": [
+    "Asian",
+    "African",
+    "European",
+    "Middle Eastern",
+    "Latino"
+  ],
+  "body_type": [
+    "thin",
+    "normal",
+    "obese"
+  ]
+}
