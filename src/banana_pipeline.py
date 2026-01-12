@@ -283,7 +283,7 @@ def run_banana_pipeline():
 
             var_attempt = 0
             var_success = False
-            while not var_success and var_attempt < 5:
+            while not var_success and var_attempt < 6:
                 try:
                     if is_fashion_variation:
                         # For fashion variations: generate ONLY body image
@@ -306,8 +306,8 @@ def run_banana_pipeline():
                 except Exception as e:
                     var_attempt += 1
                     print(f"✗ Variation {var_idx} attempt {var_attempt} failed: {e}")
-                    if var_attempt >= 5:
-                        print(f"Skipping variation {var_idx} after 5 failed attempts.")
+                    if var_attempt >= 6:
+                        print(f"Skipping variation {var_idx} after 6 failed attempts.")
                         break
                     sleep_s = min(2 ** (var_attempt - 1), 60)
                     print(f"Retrying variation {var_idx} in {sleep_s}s...")

@@ -1,31 +1,41 @@
 # Image Generation Pipeline
 
-A Python-based pipeline for generating face images using Google Cloud Vertex AI. This tool reads facial characteristics from a JSON file, generates descriptive prompts, and creates photorealistic face images using Google's image generation models.
+A Python-based pipeline system for generating face images using Google Cloud Vertex AI. Includes two pipelines:
+- **Main Pipeline**: Generate face images from structured characteristics in a JSON file
+- **Banana Pipeline**: Generate variations of base face images with configurable feature modifications
 
 ## Features
 
-- 🎨 **Automated Image Generation**: Generate face images from structured characteristics
-- 📝 **JSON-Based Configuration**: Define characteristics in an easy-to-edit JSON format
+- 🎨 **Dual Pipeline System**: Main pipeline for direct generation, Banana pipeline for variations
+- 📝 **JSON-Based Configuration**: Define characteristics and feature variations in easy-to-edit JSON formats
 - 🔄 **Unique Filenames**: Automatically generates unique filenames (UUID + timestamp) to prevent overwriting
-- 💾 **Metadata Tracking**: Saves metadata alongside each image for reproducibility
-- 🌐 **Google Cloud Integration**: Uses Vertex AI for high-quality image generation
+- 💾 **Metadata Tracking**: Saves metadata alongside each image including prompts and variations
+- 🌐 **Google Cloud Integration**: Uses Vertex AI Gemini models for high-quality image generation
+- 🔁 **Automatic Retry Logic**: Up to 5 automatic retry attempts per variation on API failure
 
 ## Project Structure
 
 ```
 Image_generation/
 ├── src/
-│   ├── main.py              # Main pipeline script
-│   ├── prompt_generator.py  # Prompt generation logic
-│   └── image_saver.py       # Image saving with unique names
+│   ├── main.py                  # Main pipeline script
+│   ├── banana_pipeline.py       # Banana pipeline (variations generator)
+│   ├── prompt_generator.py      # Prompt generation logic
+│   ├── image_saver.py           # Image saving with unique names
+│   └── __pycache__/             # Python cache
+├── base_faces/                  # Base face images for banana pipeline
 ├── output/
-│   └── images/              # Generated images folder (created automatically)
+│   ├── images/                  # Main pipeline output (metadata)
+│   └── banana/                  # Banana pipeline output by base face
 ├── config/
-│   └── characteristics.json # Base characteristics data
-├── .env.example             # Example environment variables
-├── .gitignore               # Git ignore file
-├── requirements.txt         # Python dependencies
-└── README.md                # This file
+│   ├── characteristics.json     # Base characteristics for main pipeline
+│   └── variation_features.json  # Feature variations for banana pipeline
+├── keys/
+│   └── vertex-sa.json          # Google Cloud service account credentials
+├── .env.example                 # Example environment variables
+├── .gitignore                   # Git ignore file
+├── requirements.txt             # Python dependencies
+└── README.md                    # This file
 ```
 
 ## Prerequisites
@@ -79,29 +89,70 @@ Image_generation/
    
    Edit `.env` and fill in your details:
    ```
+   # Google Cloud
    GOOGLE_CLOUD_PROJECT_ID=your-project-id
    GOOGLE_CLOUD_LOCATION=us-central1
-   GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
+   GOOGLE_APPLICATION_CREDENTIALS=keys/vertex-sa.json
+   
+   # Main Pipeline
    OUTPUT_DIR=output/images
    CHARACTERISTICS_FILE=config/characteristics.json
+   MODEL_ID=gemini-2.5-flash-image
+   MAX_VARIATIONS=999
+   
+   # Banana Pipeline
+   BANANA_BASE_FACES_DIR=base_faces
+   BANANA_OUTPUT_ROOT=output/banana
+   BANANA_FEATURES_FILE=config/variation_features.json
+   BANANA_MODEL_ID=gemini-2.5-flash-image
+   BANANA_MAX_VARIATIONS=999
+   TEST_FEATURE=                    # Optional: test single feature only
    ```
 
 5. **Place your service account key**:
-   - Save the downloaded JSON key file in the project directory
-   - Update `GOOGLE_APPLICATION_CREDENTIALS` in `.env` with the path
+   - Save the downloaded JSON key file in the `keys/` directory
+   - Ensure `GOOGLE_APPLICATION_CREDENTIALS` points to `keys/vertex-sa.json`
 
 ## Usage
 
-### Basic Usage
+### Main Pipeline: Generate Images from Characteristics
 
-Run the pipeline to generate images from all characteristics in the JSON file:
+Run the main pipeline to generate images from all characteristics in the JSON file:
 
 ```bash
 cd src
 python main.py
 ```
 
-### Customize Characteristics
+### Banana Pipeline: Generate Variations from Base Faces
+
+Generate variations of base face images with different feature modifications:
+
+```bash
+cd src
+python banana_pipeline.py
+```
+
+**How it works**:
+1. Loads base face images from `base_faces/` directory
+2. Reads variation features from `config/variation_features.json`
+3. For each base face, generates variations by:
+   - Creating gender-aware prompts with feature modifications
+   - Generating face-focused images for appearance variations
+   - Generating full-body images for fashion style variations
+4. Saves results under `output/banana/<base_face_name>/`
+5. Includes automatic retry logic (up to 5 attempts per variation)
+
+**Test Mode** (single feature):
+
+```bash
+export TEST_FEATURE="hair_color"
+python banana_pipeline.py
+```
+
+This generates variations only for the specified feature.
+
+### Customize Main Pipeline Characteristics
 
 Edit [config/characteristics.json](config/characteristics.json) to define your own face characteristics:
 
@@ -121,28 +172,49 @@ Edit [config/characteristics.json](config/characteristics.json) to define your o
 ]
 ```
 
-**Available fields**:
-- `age`: e.g., "young", "middle-aged", "senior"
-- `gender`: e.g., "male", "female", "person"
-- `ethnicity`: e.g., "Asian", "Caucasian", "African", "Hispanic"
-- `hair_color`: e.g., "black", "brown", "blonde", "gray"
-- `hair_style`: e.g., "long", "short", "curly", "straight"
-- `eye_color`: e.g., "brown", "blue", "green", "hazel"
-- `skin_tone`: e.g., "fair", "medium", "olive", "dark"
-- `facial_features`: e.g., "oval face", "square jaw", "round face"
-- `expression`: e.g., "smiling", "neutral", "confident"
+### Customize Banana Pipeline Variations
 
-### Output
+Edit [config/variation_features.json](config/variation_features.json) to define feature variations:
 
-Generated images will be saved in the `output/images/` directory with:
-- **Unique filenames**: `face_1_20251222_143022_a3f9b2c1.png`
-- **Metadata files**: `face_1_20251222_143022_a3f9b2c1_metadata.json`
+```json
+{
+  "skin_irregularities": ["clear skin", "light acne", "freckles"],
+  "hair_color": ["black", "brown", "blonde", "red"],
+  "hair_length": ["short", "medium", "long"],
+  "hair_style": ["straight", "wavy", "curly"],
+  "eyewear": ["no glasses", "glasses", "sunglasses"],
+  "makeup_female": ["no makeup", "natural", "bold"],
+  "facial_hair_male": ["clean shaven", "stubble", "beard"],
+  "fashion_style": ["casual", "formal", "athletic"],
+  "accessories": ["none", "necklace", "scarf"]
+}
+```
 
-The metadata file contains:
+**Retry Behavior**:
+- Each variation attempt automatically retries up to 5 times on failure
+- Waits between attempts (exponential backoff: 1s, 2s, 4s, 8s, 16s max)
+- After 5 failed attempts, skips to the next variation
+- Logs all failed attempts for debugging
+
+### Output Structure
+
+**Main Pipeline** saves to `output/images/`:
+- **Images**: `face_1_20251222_143022_a3f9b2c1.png`
+- **Metadata**: `face_1_20251222_143022_a3f9b2c1_metadata.json`
+
+Metadata includes:
 - Original characteristics
 - Generated prompt
 - Timestamp
 - Image path
+
+**Banana Pipeline** saves to `output/banana/<base_face_name>/`:
+- Original base image
+- Original metadata
+- Generated variations:
+  - Face-focused: `<name>_face_<idx>.png`
+  - Full-body: `<name>_body_<idx>.png`
+- Metadata for each variation with prompt and feature changes
 
 ## Troubleshooting
 
@@ -169,10 +241,12 @@ cd src
 python main.py
 ```
 
-Or use the full module path:
-```bash
-python -m src.main
-```
+### Rate Limiting / API Quota
+
+The pipeline includes automatic retry logic:
+- Detects 429 (rate limit) and RESOURCE_EXHAUSTED errors
+- Retries up to 5 times per variation with exponential backoff
+- Logs each attempt for monitoring
 
 ## Cost Considerations
 
@@ -182,19 +256,26 @@ Google Cloud Vertex AI charges per image generation. Check the [Vertex AI pricin
 
 ### Adding New Features
 
-- **Custom prompt templates**: Edit [src/prompt_generator.py](src/prompt_generator.py)
-- **Different image formats**: Modify [src/image_saver.py](src/image_saver.py)
-- **Batch processing**: Extend [src/main.py](src/main.py)
+- **Main pipeline prompts**: Edit [src/prompt_generator.py](src/prompt_generator.py)
+- **Banana pipeline prompts**: Edit functions in [src/banana_pipeline.py](src/banana_pipeline.py) like `build_face_prompt()` and `build_body_prompt()`
+- **Image saving**: Modify [src/image_saver.py](src/image_saver.py)
+- **Retry logic**: Adjust `call_model()` function parameters in [src/banana_pipeline.py](src/banana_pipeline.py)
 
 ### Testing
 
-Generate a single test image:
+**Main pipeline - single test image**:
 ```python
 from prompt_generator import generate_prompt
-from main import generate_image_from_prompt
 
 prompt = generate_prompt({"age": "young", "gender": "female", "expression": "smiling"})
 print(prompt)
+```
+
+**Banana pipeline - test single feature**:
+```bash
+export TEST_FEATURE="hair_color"
+cd src
+python banana_pipeline.py
 ```
 
 ## License
