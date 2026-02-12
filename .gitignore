@@ -23,6 +23,8 @@ keys/
 
 # Generated outputs (images + metadata)
 output/
+output/judgements/
+faces_to_judge/
 base_faces/
 
 # IDE

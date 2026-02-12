@@ -6,7 +6,7 @@
   "facial_hair_male": ["Clean-shaven", "Stubble", "Mustache", "Full beard"],
   "eyewear": ["Thick-rimmed", "Thin metal", "Sunglasses"],
   "makeup_female": ["Light", "Heavy"],
-  "lip_makeup_female": ["Neutral lipstick", "Red lipstick", "Bold colors"],
+  "lip_makeup_female": ["Neutral lipstick", "Red lipstick", "Bold color"],
   "piercings": ["Single nose", "Single lip", "Single eyebrow", "Multiple", "Earrings"],
   "tattoos": ["Facial tattoo"],
   "accessories": ["Cap", "Beanie", "Hat", "Headscarf"],
