@@ -22,10 +22,18 @@ keys/
 *.key
 
 # Generated outputs (images + metadata)
-output/
 output/judgements/
 output/images/
 output/final_dataset/
+output/evaluation/
+output/banana/
+
+# Large generated artifacts (safety nets)
+**/probability_scores.json
+**/paired_deltas.json
+**/variation_impact_summary.json
+**/variation_impact_summary.csv
+
 faces_to_judge/
 base_faces/
 
