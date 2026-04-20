@@ -1,0 +1,25 @@
+{
+  "skin_irregularities": ["Freckles", "Acne", "Moles"],
+  "hair_color": ["Black", "Brown", "Blonde", "Gray"],
+  "hair_length": ["Bald", "Short", "Long"],
+  "hair_style": ["Messy", "Slicked back", "Mohawk"],
+  "facial_hair_male": ["Clean-shaven", "Full beard"],
+  "eyewear": ["Thick-rimmed", "Sunglasses"],
+  "makeup_female": ["Light", "Heavy"],
+  "lip_makeup_female": ["Neutral lipstick", "Red lipstick"],
+  "piercings": ["Single nose", "Multiple"],
+  "tattoos": ["Facial tattoo"],
+  "accessories": ["Cap", "Beanie"],
+  "fashion_style": [
+    "Professional / Business formal",
+    "Formal / Evening wear",
+    "Casual",
+    "Smart casual",
+    "Sporty / Athletic wear",
+    "Streetwear",
+    "Functional / outdoor wear",
+    "Daring / Provocative",
+    "Vintage / Retro",
+    "Worn / Distressed clothing"
+  ]
+}

@@ -168,6 +168,14 @@ def iter_variations(features: dict, gender: str, limit: int, feature_filter: Opt
         for option in options:
             if not option:  # Skip empty strings
                 continue
+            # If base gender is male, skip certain hair styles that are not desired
+            if key == "hair_style" and gender == "male":
+                try:
+                    opt_low = str(option).strip().lower()
+                except Exception:
+                    opt_low = ""
+                if opt_low in ("braid", "bun"):
+                    continue
             # Yield a variation with only this one feature changed
             variation = {key: option}
             yield variation

@@ -24,6 +24,8 @@ keys/
 # Generated outputs (images + metadata)
 output/
 output/judgements/
+output/images/
+output/final_dataset/
 faces_to_judge/
 base_faces/
 
