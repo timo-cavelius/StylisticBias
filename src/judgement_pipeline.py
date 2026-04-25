@@ -250,9 +250,8 @@ def should_skip_variation(characteristics: dict, base_gender: str | None) -> boo
 
 
 def should_skip_folder(base_characteristics: dict) -> bool:
-    body_type = str(base_characteristics.get("body_type", "")).strip().lower()
-    ethnicity = str(base_characteristics.get("ethnicity", "")).strip().lower()
-    return body_type == "thin" or ethnicity == "latino"
+    # Folder-level filtering is disabled so all base-face groups are judged.
+    return False
 
 
 VARIATION_WHITELIST = load_variation_whitelist(

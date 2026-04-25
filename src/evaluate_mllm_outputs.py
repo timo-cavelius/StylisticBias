@@ -34,6 +34,8 @@ except Exception:
 
 MAX_SCENARIO_INCLUDED = 25
 
+HEATMAP_CMAP = "coolwarm"
+
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower())
@@ -232,6 +234,44 @@ def _load_scenario_labels(path: Path) -> dict[int, str]:
     return labels
 
 
+def _load_scenario_options(path: Path) -> dict[int, tuple[str, str]]:
+    options: dict[int, tuple[str, str]] = {}
+    data = _read_json(path)
+    if not isinstance(data, list):
+        return options
+
+    for index, item in enumerate(data, start=1):
+        if not isinstance(item, dict):
+            continue
+        option_a = str(item.get("a", "")).strip()
+        option_b = str(item.get("b", "")).strip()
+        if option_a and option_b:
+            options[index] = (option_a, option_b)
+    return options
+
+
+def _probability_for_option(row: dict, target_option: str) -> float | None:
+    if not target_option:
+        return None
+
+    counts = row.get("counts") or {}
+    total = int(row.get("n") or 0)
+    if total <= 0 or not isinstance(counts, dict):
+        return None
+
+    target_norm = _normalize_text(target_option)
+    for option, count in counts.items():
+        if _normalize_text(str(option)) == target_norm:
+            return _safe_float(count, 0.0) / total
+
+    # If the target option is part of the scenario options but received zero votes,
+    # its probability is 0.0 rather than missing.
+    for option in row.get("options") or []:
+        if _normalize_text(str(option)) == target_norm:
+            return 0.0
+    return None
+
+
 def _extract_variation_name(face_folder_name: str, variation_folder: Path) -> str:
     if variation_folder.name == face_folder_name:
         return "base"
@@ -300,7 +340,7 @@ def _plot_variation_impact_heatmap(
     image = ax.imshow(
         data,
         aspect="auto",
-        cmap="coolwarm",
+        cmap=HEATMAP_CMAP,
         norm=TwoSlopeNorm(vmin=-max_abs, vcenter=0.0, vmax=max_abs),
     )
 
@@ -434,6 +474,8 @@ def evaluate_model(model_dir: Path, evaluation_dir: Path, max_faces: int = 0):
     if not model_dir.exists():
         raise FileNotFoundError(f"Model folder not found: {model_dir}")
 
+    scenario_options = _load_scenario_options(Path("config/judgement_scenarios.json"))
+
     probability_rows: list[dict] = []
     pair_rows: list[dict] = []
 
@@ -556,13 +598,27 @@ def evaluate_model(model_dir: Path, evaluation_dir: Path, max_faces: int = 0):
                 face_scenario_to_variations[int(scenario)].append(row)
 
         for scenario, base_row in face_scenario_to_base.items():
-            base_score = base_row.get("p_option_a")
-            base_option_a = base_row.get("option_a")
+            canonical_pair = scenario_options.get(int(scenario))
+            if canonical_pair is not None:
+                base_option_a, base_option_b = canonical_pair
+                base_score = _probability_for_option(base_row, base_option_a)
+            else:
+                base_score = base_row.get("p_option_a")
+                base_option_a = base_row.get("option_a")
+                base_option_b = (
+                    base_row["options"][0]
+                    if len(base_row["options"]) == 2 and base_row["options"][1] == base_option_a
+                    else (base_row["options"][1] if len(base_row["options"]) == 2 else None)
+                )
+
             if base_score is None:
                 continue
 
             for var_row in face_scenario_to_variations.get(scenario, []):
-                var_score = var_row.get("p_option_a")
+                if canonical_pair is not None:
+                    var_score = _probability_for_option(var_row, base_option_a)
+                else:
+                    var_score = var_row.get("p_option_a")
                 if var_score is None:
                     continue
 
@@ -573,7 +629,7 @@ def evaluate_model(model_dir: Path, evaluation_dir: Path, max_faces: int = 0):
                     "variation_name": var_row["variation_name"],
                     "scenario": int(scenario),
                     "option_a": base_option_a,
-                    "option_b": (base_row["options"][0] if len(base_row["options"]) == 2 and base_row["options"][1] == base_option_a else (base_row["options"][1] if len(base_row["options"]) == 2 else None)),
+                    "option_b": base_option_b,
                     "base_score": base_score,
                     "variation_score": var_score,
                     "delta": delta,
@@ -827,9 +883,9 @@ def resolve_model_dirs(judgements_root: Path, model_folder: str | None, all_mode
     if all_models:
         return sorted([p for p in judgements_root.iterdir() if p.is_dir()])
 
-    selected = model_folder or "llave_next"
+    selected = model_folder or "llava_next"
     aliases = {
-        "llava_next": "llave_next",
+        "llava_next": "llava_next",
     }
     selected = aliases.get(selected, selected)
     return [judgements_root / selected]

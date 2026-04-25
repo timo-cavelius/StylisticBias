@@ -39,6 +39,8 @@ MIN_FACES_PER_SUMMARY_ROW = 50
 DEFAULT_BIAS_Z_THRESHOLD = 3.29
 DEFAULT_BIAS_MEAN_DIFF_THRESHOLD = 0.20
 
+HEATMAP_CMAP = "coolwarm"
+
 
 def _load_scenario_labels(path: Path) -> dict[int, str]:
     labels: dict[int, str] = {}
@@ -111,7 +113,7 @@ def _plot_category_scenario_heatmap(
     height = max(8, len(category_pairs) * 0.35)
     width = max(10, len(all_scenarios) * 0.35)
     fig, ax = plt.subplots(figsize=(width, height))
-    image = ax.imshow(data, aspect="auto", cmap="coolwarm", vmin=0.0, vmax=1.0)
+    image = ax.imshow(data, aspect="auto", cmap=HEATMAP_CMAP, vmin=0.0, vmax=1.0)
 
     ax.set_xticks(range(len(all_scenarios)))
     xtick_labels = [scenario_labels.get(s, f"Scenario {s}") for s in all_scenarios]
@@ -261,6 +263,61 @@ def _std(values: list[float]) -> float | None:
     m = _mean(values)
     var = sum((v - m) ** 2 for v in values) / (len(values) - 1)
     return math.sqrt(var)
+
+
+def _compute_category_variation_strength(grouped_summary: dict) -> dict[str, dict]:
+    """
+    Compute variation strength for each category type.
+    
+    For each category_type, this measures how much the mean judgments differ
+    across different category values (e.g., young vs middle-aged vs elderly).
+    
+    Metric: For each scenario, compute the std of mean_p_option_a across category_values.
+    Then average across scenarios to get a single strength value per category.
+    
+    Returns:
+        dict mapping category_type -> {
+            'variation_strength': float,  # average std of means across scenarios
+            'n_scenarios': int,           # number of scenarios used
+            'per_scenario': dict[int, float]  # std of means per scenario
+        }
+    """
+    result = {}
+    
+    for category_type, value_map in grouped_summary.items():
+        per_scenario = {}
+        scenario_stds = []
+        
+        # Group by scenario to see variation across category_values
+        scenarios_by_value = defaultdict(lambda: defaultdict(list))
+        for category_value, scenario_map in value_map.items():
+            for scenario, rows in scenario_map.items():
+                if not rows or len(rows) < MIN_FACES_PER_SUMMARY_ROW:
+                    continue
+                p_a_values = [r["p_option_a"] for r in rows if r["p_option_a"] is not None]
+                mean_p = _mean(p_a_values)
+                if mean_p is not None:
+                    scenarios_by_value[scenario][category_value] = mean_p
+        
+        # For each scenario, compute std of means across category_values
+        for scenario, value_means in sorted(scenarios_by_value.items()):
+            if len(value_means) >= 2:  # Need at least 2 category values to compute variation
+                means = list(value_means.values())
+                std_of_means = _std(means)
+                if std_of_means is not None:
+                    per_scenario[scenario] = std_of_means
+                    scenario_stds.append(std_of_means)
+        
+        # Average across scenarios
+        avg_variation = _mean(scenario_stds) if scenario_stds else None
+        
+        result[category_type] = {
+            'variation_strength': avg_variation,
+            'n_scenarios': len(scenario_stds),
+            'per_scenario': per_scenario,
+        }
+    
+    return result
 
 
 def _plot_counts(counts: dict[str, Counter], output_file: Path):
@@ -594,6 +651,26 @@ def evaluate_base_faces(
         summary_csv_rows,
     )
 
+    # Compute category variation strength
+    category_variation_strength = _compute_category_variation_strength(grouped_summary)
+    
+    # Save category variation strength to JSON and CSV
+    _save_json(evaluation_dir / "category_variation_strength.json", category_variation_strength)
+    
+    variation_rows = []
+    for category_type, metrics in sorted(category_variation_strength.items()):
+        variation_rows.append([
+            category_type,
+            metrics['variation_strength'],
+            metrics['n_scenarios'],
+        ])
+    
+    _save_csv(
+        evaluation_dir / "category_variation_strength.csv",
+        ["category_type", "variation_strength", "n_scenarios"],
+        variation_rows,
+    )
+
     significant_bias_rows_sorted = sorted(
         significant_bias_rows,
         key=lambda row: (
@@ -653,6 +730,10 @@ def evaluate_base_faces(
         f"faces_skipped_filter: {faces_skipped_filter}",
         f"base_probability_rows: {len(base_probability_rows)}",
         f"significant_bias_rows: {len(significant_bias_rows_sorted)}",
+        f"",
+        f"category_variation_strength (how much judgments differ across category values):",
+        *[f"  {cat_type}: {metrics['variation_strength']:.4f}" 
+          for cat_type, metrics in sorted(category_variation_strength.items())],
     ]
     (evaluation_dir / "base_faces_summary.txt").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
@@ -667,14 +748,14 @@ def evaluate_base_faces(
 
 
 def _resolve_model_folder(judgements_root: Path, model_folder: str) -> Path:
-    aliases = {"llava_next": "llave_next"}
+    aliases = {"llava_next": "llava_next"}
     selected = aliases.get(model_folder, model_folder)
     return judgements_root / selected
 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate base-face judgements by model.")
-    parser.add_argument("--model-folder", default="llave_next", help="Model folder under output/judgements (e.g., llave_next, qwen3)")
+    parser.add_argument("--model-folder", default="llava_next", help="Model folder under output/judgements (e.g., llava_next, qwen3)")
     parser.add_argument("--judgements-root", default="output/judgements", help="Root with model judgement folders")
     parser.add_argument("--evaluation-root", default="output/evaluation", help="Root for evaluation outputs")
     parser.add_argument("--max-faces", type=int, default=0, help="Optional face limit for quick runs (0 = all)")
