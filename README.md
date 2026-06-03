@@ -194,7 +194,7 @@ python src/judgement_pipeline.py --model gemma3
 ```
 
 Supported values for `--model` (or `JUDGE_MODEL_TYPE`):
-- `vllm` (OpenAI-compatible vLLM endpoint, e.g. RunPod)
+- `vllm` (OpenAI-compatible vLLM endpoint)
 - `pixtral` (OpenAI-compatible vLLM endpoint with Pixtral defaults)
 - `gemma4` (Vertex AI endpoint, output subdir defaults to `gemma4`)
 - `gemma3` (Vertex AI endpoint)
@@ -344,6 +344,17 @@ print(prompt)
 export TEST_FEATURE="hair_color"
 python src/banana_pipeline.py
 ```
+
+## Repository Hygiene
+
+Before publishing the repository publicly, keep the following out of version control:
+
+- Local secrets and credentials in `keys/` and `.env`
+- Generated image and evaluation outputs under `output/`
+- Local model assets in `src/LMML_models/`
+- Interpreter caches such as `__pycache__/` and `.venv/`
+
+The repository's `.gitignore` is configured for these generated artifacts and local-only files.
 
 ## Repository Hygiene
 
