@@ -26,16 +26,17 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats as scipy_stats
 
 
 CATEGORY_VALUES = {
     "age": ["young adult", "middle-aged adult", "elderly"],
     "gender": ["male", "female"],
-    "ethnicity": ["Asian", "African", "European", "Middle Eastern"],
-    "body_type": ["normal", "obese"],
+    "ethnicity": ["Asian", "African", "European", "Middle Eastern", "Latino"],
+    "body_type": ["normal", "obese", "thin"],
 }
 
-MIN_FACES_PER_SUMMARY_ROW = 50
+MIN_FACES_PER_SUMMARY_ROW = 1
 DEFAULT_BIAS_Z_THRESHOLD = 3.29
 DEFAULT_BIAS_MEAN_DIFF_THRESHOLD = 0.20
 
@@ -265,31 +266,164 @@ def _std(values: list[float]) -> float | None:
     return math.sqrt(var)
 
 
-def _compute_category_variation_strength(grouped_summary: dict) -> dict[str, dict]:
-    """
-    Compute variation strength for each category type.
-    
-    For each category_type, this measures how much the mean judgments differ
-    across different category values (e.g., young vs middle-aged vs elderly).
-    
-    Metric: For each scenario, compute the std of mean_p_option_a across category_values.
-    Then average across scenarios to get a single strength value per category.
-    
+def _bh_correction(p_values: list[float]) -> list[float]:
+    """Benjamini-Hochberg FDR correction. Returns adjusted p-values in input order."""
+    n = len(p_values)
+    if n == 0:
+        return []
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    adjusted = [1.0] * n
+    prev = 1.0
+    for rank, (i, p) in enumerate(reversed(indexed), 1):
+        adj = min(p * n / (n - rank + 1), prev)
+        prev = adj
+        adjusted[i] = adj
+    return adjusted
+
+
+def _compute_category_variation_strength(
+    grouped_summary: dict,
+    n_bootstrap: int = 500,
+    ci: float = 0.95,
+    rng: np.random.Generator | None = None,
+) -> dict[str, dict]:
+    """Compute variation strength for each category type with bootstrap CIs and Wilcoxon tests.
+
+    For each category_type, measures how much mean judgments differ across category
+    values per scenario (std of means), averaged across scenarios.
+
+    Bootstrap resamples faces within each (category_value, scenario) group to estimate
+    95% CIs. Wilcoxon signed-rank tests whether per-scenario stds are > 0.
+    BH correction is applied within-model across the category tests.
+
     Returns:
         dict mapping category_type -> {
-            'variation_strength': float,  # average std of means across scenarios
-            'n_scenarios': int,           # number of scenarios used
-            'per_scenario': dict[int, float]  # std of means per scenario
+            'variation_strength': float,
+            'n_scenarios': int,
+            'per_scenario': dict[int, float],
+            'ci_lower': float | None,
+            'ci_upper': float | None,
+            'wilcoxon_p': float | None,
+            'wilcoxon_p_bh': float | None,
         }
     """
-    result = {}
-    
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    # Pre-collect face-level data: category_type -> scenario -> category_value -> [p_option_a]
+    face_data: dict[str, dict[int, dict[str, list[float]]]] = {}
     for category_type, value_map in grouped_summary.items():
-        per_scenario = {}
-        scenario_stds = []
-        
-        # Group by scenario to see variation across category_values
-        scenarios_by_value = defaultdict(lambda: defaultdict(list))
+        face_data[category_type] = {}
+        for category_value, scenario_map in value_map.items():
+            for scenario, rows in scenario_map.items():
+                if not rows or len(rows) < MIN_FACES_PER_SUMMARY_ROW:
+                    continue
+                p_vals = [r["p_option_a"] for r in rows if r["p_option_a"] is not None]
+                if not p_vals:
+                    continue
+                face_data[category_type].setdefault(scenario, {})[category_value] = p_vals
+
+    result: dict[str, dict] = {}
+    raw_p_values: dict[str, float] = {}
+
+    for category_type, scenario_map in face_data.items():
+        per_scenario: dict[int, float] = {}
+        scenario_stds: list[float] = []
+
+        for scenario, value_faces in sorted(scenario_map.items()):
+            if len(value_faces) < 2:
+                continue
+            means = [_mean(p_vals) for p_vals in value_faces.values() if _mean(p_vals) is not None]
+            if len(means) < 2:
+                continue
+            std_val = _std(means)
+            if std_val is not None:
+                per_scenario[scenario] = std_val
+                scenario_stds.append(std_val)
+
+        avg_variation = _mean(scenario_stds) if scenario_stds else None
+
+        # Bootstrap CIs (face-level resampling)
+        ci_lower: float | None = None
+        ci_upper: float | None = None
+        if scenario_stds:
+            boot_strengths: list[float] = []
+            for _ in range(n_bootstrap):
+                boot_stds: list[float] = []
+                for scenario, value_faces in scenario_map.items():
+                    if len(value_faces) < 2:
+                        continue
+                    boot_means: list[float] = []
+                    for p_vals in value_faces.values():
+                        sampled = rng.choice(p_vals, size=len(p_vals), replace=True)
+                        boot_means.append(float(np.mean(sampled)))
+                    if len(boot_means) >= 2:
+                        s = _std(boot_means)
+                        if s is not None:
+                            boot_stds.append(s)
+                if boot_stds:
+                    v = _mean(boot_stds)
+                    if v is not None:
+                        boot_strengths.append(v)
+            if boot_strengths:
+                alpha = 1.0 - ci
+                ci_lower = float(np.percentile(boot_strengths, 100 * alpha / 2))
+                ci_upper = float(np.percentile(boot_strengths, 100 * (1 - alpha / 2)))
+
+        # Wilcoxon signed-rank vs. zero (one-sided: alternative='greater')
+        wilcoxon_p: float | None = None
+        if len(scenario_stds) >= 2:
+            try:
+                _, wilcoxon_p = scipy_stats.wilcoxon(
+                    scenario_stds, zero_method="wilcox", alternative="greater"
+                )
+                wilcoxon_p = float(wilcoxon_p)
+            except Exception:
+                wilcoxon_p = None
+
+        if wilcoxon_p is not None:
+            raw_p_values[category_type] = wilcoxon_p
+
+        result[category_type] = {
+            "variation_strength": avg_variation,
+            "n_scenarios": len(scenario_stds),
+            "per_scenario": per_scenario,
+            "ci_lower": ci_lower,
+            "ci_upper": ci_upper,
+            "wilcoxon_p": wilcoxon_p,
+            "wilcoxon_p_bh": None,  # filled in below after BH correction
+        }
+
+    # Apply BH correction across all category tests within this model
+    if raw_p_values:
+        categories = list(raw_p_values.keys())
+        corrected = _bh_correction([raw_p_values[c] for c in categories])
+        for cat, p_adj in zip(categories, corrected):
+            result[cat]["wilcoxon_p_bh"] = p_adj
+
+    return result
+
+
+def _compute_category_label_variation_strength(grouped_summary: dict) -> dict[str, dict[str, dict]]:
+    """
+    Compute variation strength for each label within each category type.
+
+    For each category_type and category_value, this measures how far that label's
+    mean judgment deviates from the scenario mean across all labels in the same
+    category_type. The per-label score is the average absolute deviation across
+    scenarios where at least two labels are available.
+
+    Returns:
+        dict mapping category_type -> category_value -> {
+            'variation_strength': float,
+            'n_scenarios': int,
+        }
+    """
+    result: dict[str, dict[str, dict]] = {}
+
+    for category_type, value_map in grouped_summary.items():
+        scenario_means: dict[int, dict[str, float]] = defaultdict(dict)
+
         for category_value, scenario_map in value_map.items():
             for scenario, rows in scenario_map.items():
                 if not rows or len(rows) < MIN_FACES_PER_SUMMARY_ROW:
@@ -297,26 +431,28 @@ def _compute_category_variation_strength(grouped_summary: dict) -> dict[str, dic
                 p_a_values = [r["p_option_a"] for r in rows if r["p_option_a"] is not None]
                 mean_p = _mean(p_a_values)
                 if mean_p is not None:
-                    scenarios_by_value[scenario][category_value] = mean_p
-        
-        # For each scenario, compute std of means across category_values
-        for scenario, value_means in sorted(scenarios_by_value.items()):
-            if len(value_means) >= 2:  # Need at least 2 category values to compute variation
-                means = list(value_means.values())
-                std_of_means = _std(means)
-                if std_of_means is not None:
-                    per_scenario[scenario] = std_of_means
-                    scenario_stds.append(std_of_means)
-        
-        # Average across scenarios
-        avg_variation = _mean(scenario_stds) if scenario_stds else None
-        
-        result[category_type] = {
-            'variation_strength': avg_variation,
-            'n_scenarios': len(scenario_stds),
-            'per_scenario': per_scenario,
-        }
-    
+                    scenario_means[scenario][category_value] = mean_p
+
+        label_sum: dict[str, float] = defaultdict(float)
+        label_n: dict[str, int] = defaultdict(int)
+
+        for scenario, value_means in sorted(scenario_means.items()):
+            if len(value_means) < 2:
+                continue
+            scenario_mean = _mean(list(value_means.values()))
+            if scenario_mean is None:
+                continue
+            for category_value, mean_p in value_means.items():
+                label_sum[category_value] += abs(mean_p - scenario_mean)
+                label_n[category_value] += 1
+
+        result[category_type] = {}
+        for category_value in sorted(label_n):
+            result[category_type][category_value] = {
+                "variation_strength": label_sum[category_value] / max(label_n[category_value], 1),
+                "n_scenarios": label_n[category_value],
+            }
+
     return result
 
 
@@ -366,7 +502,6 @@ def evaluate_base_faces(
     faces_seen = 0
     faces_with_base = 0
     faces_used = 0
-    faces_skipped_filter = 0
     for face_folder in sorted(p for p in model_dir.iterdir() if p.is_dir()):
         if max_faces > 0 and faces_seen >= max_faces:
             break
@@ -379,13 +514,6 @@ def evaluate_base_faces(
         faces_with_base += 1
 
         chars, _source_json = _extract_base_characteristics(base_folder)
-
-        body_type_norm = _normalize_text(chars.get("body_type", ""))
-        ethnicity_norm = _normalize_text(chars.get("ethnicity", ""))
-        if body_type_norm == "thin" or ethnicity_norm == "latino":
-            faces_skipped_filter += 1
-            continue
-
         faces_used += 1
         counts["age"][chars["age"]] += 1
         counts["gender"][chars["gender"]] += 1
@@ -531,8 +659,12 @@ def evaluate_base_faces(
     )
     scenario_labels = _load_scenario_labels(Path("config/judgement_scenarios.json"))
 
+    official_scenario_ids = set(all_scenarios)  # already filtered to 1-25
+
     for row in base_probability_rows:
         scenario = int(row["scenario"])
+        if scenario not in official_scenario_ids:
+            continue
 
         for category_type, allowed_values in CATEGORY_VALUES.items():
             value = row.get(category_type)
@@ -653,6 +785,7 @@ def evaluate_base_faces(
 
     # Compute category variation strength
     category_variation_strength = _compute_category_variation_strength(grouped_summary)
+    category_label_variation_strength = _compute_category_label_variation_strength(grouped_summary)
     
     # Save category variation strength to JSON and CSV
     _save_json(evaluation_dir / "category_variation_strength.json", category_variation_strength)
@@ -661,14 +794,42 @@ def evaluate_base_faces(
     for category_type, metrics in sorted(category_variation_strength.items()):
         variation_rows.append([
             category_type,
-            metrics['variation_strength'],
-            metrics['n_scenarios'],
+            metrics["variation_strength"],
+            metrics["n_scenarios"],
+            metrics["ci_lower"],
+            metrics["ci_upper"],
+            metrics["wilcoxon_p"],
+            metrics["wilcoxon_p_bh"],
         ])
-    
+
     _save_csv(
         evaluation_dir / "category_variation_strength.csv",
-        ["category_type", "variation_strength", "n_scenarios"],
+        ["category_type", "variation_strength", "n_scenarios",
+         "ci_lower_95", "ci_upper_95", "wilcoxon_p", "wilcoxon_p_bh"],
         variation_rows,
+    )
+
+    label_variation_rows = []
+    for category_type, label_map in sorted(category_label_variation_strength.items()):
+        for category_value, metrics in sorted(label_map.items()):
+            label_variation_rows.append(
+                [
+                    category_type,
+                    category_value,
+                    metrics["variation_strength"],
+                    metrics["n_scenarios"],
+                ]
+            )
+
+    _save_csv(
+        evaluation_dir / "category_variation_strength_by_label.csv",
+        ["category_type", "category_value", "variation_strength", "n_scenarios"],
+        label_variation_rows,
+    )
+
+    _save_json(
+        evaluation_dir / "category_variation_strength_by_label.json",
+        category_label_variation_strength,
     )
 
     significant_bias_rows_sorted = sorted(
@@ -726,8 +887,7 @@ def evaluate_base_faces(
         f"model: {model_dir.name}",
         f"faces_scanned: {faces_seen}",
         f"faces_with_base_folder: {faces_with_base}",
-        f"faces_used_excluding_thin_latino: {faces_used}",
-        f"faces_skipped_filter: {faces_skipped_filter}",
+        f"faces_used: {faces_used}",
         f"base_probability_rows: {len(base_probability_rows)}",
         f"significant_bias_rows: {len(significant_bias_rows_sorted)}",
         f"",
@@ -740,8 +900,7 @@ def evaluate_base_faces(
     return {
         "faces_scanned": faces_seen,
         "faces_with_base_folder": faces_with_base,
-        "faces_used_excluding_thin_latino": faces_used,
-        "faces_skipped_filter": faces_skipped_filter,
+        "faces_used": faces_used,
         "base_probability_rows": len(base_probability_rows),
         "significant_bias_rows": len(significant_bias_rows_sorted),
     }
@@ -784,7 +943,7 @@ def main():
         bias_z_threshold=args.bias_z_threshold,
         bias_mean_diff_threshold=args.bias_mean_diff_threshold,
     )
-    print(f"[info] base faces used (excluding thin/latino): {stats['faces_used_excluding_thin_latino']}")
+    print(f"[info] base faces used: {stats['faces_used']}")
     print(f"[info] significant bias rows: {stats['significant_bias_rows']}")
     print(f"[ok] base-face evaluation saved to: {out_dir}")
 

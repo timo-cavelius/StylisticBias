@@ -365,6 +365,147 @@ def _plot_variation_impact_heatmap(
     plt.close(fig)
 
 
+def _plot_variation_impact_heatmap_combined(
+    female_rows: list[dict],
+    male_rows: list[dict],
+    scenario_labels: dict[int, str],
+    output_file: Path,
+):
+    """Single combined heatmap matching the style of the previous standalone script.
+
+    Shared variations average male and female mean_delta; gender-specific
+    variations (facial_hair_male, makeup_female, lip_makeup_female) use
+    only the applicable gender's data.
+    """
+    FEMALE_ONLY_KEYS = {"makeup_female", "lip_makeup_female"}
+    MALE_ONLY_KEYS   = {"facial_hair_male"}
+
+    CAT_DISPLAY = {
+        "accessories":         "Accessories",
+        "eyewear":             "Eyewear",
+        "facial_hair":         "Facial Hair",
+        "fashion_style":       "Fashion",
+        "hair_color":          "Hair Color",
+        "hair_length":         "Hair Length",
+        "hair_style":          "Hair Style",
+        "lip_makeup":          "Lip Makeup",
+        "makeup":              "Makeup",
+        "piercings":           "Piercings",
+        "skin_irregularities": "Skin",
+        "tattoos":             "Tattoos",
+    }
+
+    def _parent(var: str) -> str:
+        key = var.split(":", 1)[0].strip().lower() if ":" in var else var.strip().lower()
+        if key.endswith("_male"):   key = key[: -len("_male")]
+        if key.endswith("_female"): key = key[: -len("_female")]
+        return key or "other"
+
+    def _short(var: str) -> str:
+        return var.split(":", 1)[1].strip() if ":" in var else var
+
+    # Build per-(variation, scenario) accumulator, respecting gender-specific rules
+    from collections import defaultdict
+    acc: dict[str, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for row in female_rows:
+        cat = row["variation_name"].split(":", 1)[0].strip().lower()
+        if cat not in MALE_ONLY_KEYS:
+            acc[row["variation_name"]][int(row["scenario"])].append(float(row["mean_delta"]))
+    for row in male_rows:
+        cat = row["variation_name"].split(":", 1)[0].strip().lower()
+        if cat not in FEMALE_ONLY_KEYS:
+            acc[row["variation_name"]][int(row["scenario"])].append(float(row["mean_delta"]))
+
+    if not acc:
+        return
+
+    scenarios  = sorted({s for v in acc.values() for s in v})
+    variations = sorted(acc, key=lambda n: (_parent(n), n.lower()))
+    parent_seq = [_parent(v) for v in variations]
+    short_labels = [_short(v) for v in variations]
+
+    # Category spans for bracket labels
+    cat_spans: list[tuple[int, int, str]] = []
+    start = 0
+    for idx in range(1, len(parent_seq)):
+        if parent_seq[idx] != parent_seq[idx - 1]:
+            label = CAT_DISPLAY.get(parent_seq[start],
+                                    parent_seq[start].replace("_", " ").title())
+            cat_spans.append((start, idx - 1, label))
+            start = idx
+    cat_spans.append((start, len(parent_seq) - 1,
+                      CAT_DISPLAY.get(parent_seq[start],
+                                      parent_seq[start].replace("_", " ").title())))
+
+    data = np.array(
+        [[float(np.mean(acc[v][s])) if acc[v].get(s) else float("nan")
+          for s in scenarios]
+         for v in variations],
+        dtype=float,
+    )
+
+    max_abs = float(np.nanmax(np.abs(data))) if data.size else 0.0
+    if not np.isfinite(max_abs) or max_abs == 0:
+        max_abs = 1e-6
+
+    FS     = 13
+    CELL   = 0.42
+    L, R, T, B = 2.2, 2.8, 0.9, 3.2
+    CB_W, CB_GAP, CAT_W, CB_PAD = 0.25, 0.10, 1.10, 0.15
+
+    n_vars, n_scen = len(variations), len(scenarios)
+    axes_w = n_scen * CELL
+    axes_h = n_vars  * CELL
+    fig_w  = L + axes_w + R
+    fig_h  = T + axes_h + B
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    fig.subplots_adjust(
+        left   = L / fig_w,
+        right  = (L + axes_w) / fig_w,
+        bottom = B / fig_h,
+        top    = (B + axes_h) / fig_h,
+    )
+
+    image = ax.imshow(
+        data, aspect="auto", cmap=HEATMAP_CMAP,
+        norm=TwoSlopeNorm(vmin=-max_abs, vcenter=0.0, vmax=max_abs),
+    )
+
+    ax.set_yticks(range(n_vars))
+    ax.set_yticklabels(short_labels, fontsize=FS)
+    ax.set_xticks(range(n_scen))
+    ax.set_xticklabels(
+        [scenario_labels.get(s, f"Scenario {s}") for s in scenarios],
+        rotation=70, ha="right", fontsize=FS,
+    )
+    ax.set_ylabel("variation", fontsize=FS)
+    ax.set_xlabel("scenario options", fontsize=FS)
+    ax.set_title("Variation Impact vs Base (delta p(option_a)) - combined", fontsize=FS)
+
+    for idx in range(1, len(parent_seq)):
+        if parent_seq[idx] != parent_seq[idx - 1]:
+            ax.axhline(y=idx - 0.5, color="black", linewidth=1.4)
+
+    cb_left = (L + axes_w + CB_GAP + CAT_W + CB_PAD) / fig_w
+    cbar_ax = fig.add_axes([cb_left, B / fig_h, CB_W / fig_w, axes_h / fig_h])
+    cbar = fig.colorbar(image, cax=cbar_ax)
+    cbar.ax.tick_params(labelsize=FS)
+    cbar.set_label("mean delta (variation - base)", fontsize=FS)
+
+    ax_right_fig = (L + axes_w) / fig_w
+    for s, e, cat in cat_spans:
+        y_norm = 1.0 - (((s + e) / 2) + 0.5) / n_vars
+        y_fig  = B / fig_h + y_norm * (axes_h / fig_h)
+        fig.text(ax_right_fig + CB_GAP / fig_w, y_fig, cat,
+                 va="center", ha="left", fontsize=FS,
+                 color="#333333", fontweight="bold")
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_file, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _plot_delta_histogram(deltas: list[float], output_file: Path, title: str):
     output_file.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -850,6 +991,12 @@ def evaluate_model(model_dir: Path, evaluation_dir: Path, max_faces: int = 0):
         scenario_labels=scenario_labels,
         gender="male",
         output_file=evaluation_dir / "variation_impact_heatmap_male.png",
+    )
+    _plot_variation_impact_heatmap_combined(
+        female_rows=female_rows,
+        male_rows=male_rows,
+        scenario_labels=scenario_labels,
+        output_file=evaluation_dir / "variation_impact_heatmap_combined.png",
     )
 
     _plot_delta_histogram(

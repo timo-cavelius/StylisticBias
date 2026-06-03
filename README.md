@@ -1,8 +1,11 @@
 # Image Generation Pipeline
 
-A Python-based pipeline system for generating face images using Google Cloud Vertex AI. Includes two pipelines:
-- **Main Pipeline**: Generate face images from structured characteristics in a JSON file
-- **Banana Pipeline**: Generate variations of base face images with configurable feature modifications
+A Python project for generating face images with Google Cloud Vertex AI and evaluating multimodal model judgements. It includes:
+- **Main pipeline**: Generate face images from structured characteristics in a JSON file
+- **Banana pipeline**: Generate variations of base face images with configurable feature modifications
+- **Evaluation scripts**: Create statistics, tables, and plots for model comparison and analysis
+
+Generated outputs, local credentials, and model caches are intentionally excluded from version control so the repository can be published safely.
 
 ## Features
 
@@ -16,22 +19,21 @@ A Python-based pipeline system for generating face images using Google Cloud Ver
 ## Project Structure
 
 ```
-Image_generation/
+StylisticBias/
 ├── src/
-│   ├── main.py                  # Main pipeline script
-│   ├── banana_pipeline.py       # Banana pipeline (variations generator)
+│   ├── main.py                  # Main image generation pipeline
+│   ├── banana_pipeline.py       # Variation generation pipeline
+│   ├── judgement_pipeline.py    # MLLM judgement runner
+│   ├── evaluate_base_faces.py    # Base-face evaluation
+│   ├── evaluate_mllm_outputs.py # Full evaluation / statistics pipeline
 │   ├── prompt_generator.py      # Prompt generation logic
-│   ├── image_saver.py           # Image saving with unique names
-│   └── __pycache__/             # Python cache
-├── base_faces/                  # Base face images for banana pipeline
-├── output/
-│   ├── images/                  # Main pipeline output (metadata)
-│   └── banana/                  # Banana pipeline output by base face
+│   └── image_saver.py           # Image saving and metadata helpers
 ├── config/
 │   ├── characteristics.json     # Base characteristics for main pipeline
 │   └── variation_features.json  # Feature variations for banana pipeline
-├── keys/
-│   └── vertex-sa.json          # Google Cloud service account credentials
+├── base_faces/                  # Local base-face inputs for variation generation
+├── output/                      # Generated artifacts (ignored by git)
+├── keys/                        # Local service account keys (ignored by git)
 ├── .env.example                 # Example environment variables
 ├── .gitignore                   # Git ignore file
 ├── requirements.txt             # Python dependencies
@@ -40,10 +42,10 @@ Image_generation/
 
 ## Prerequisites
 
-1. **Google Cloud Account**: You need an active Google Cloud account
-2. **Project with Vertex AI enabled**: Create a project and enable the Vertex AI API
-3. **Service Account**: Create a service account with necessary permissions
-4. **Python 3.8+**: Ensure Python is installed
+1. **Google Cloud Account**: You need an active Google Cloud account.
+2. **Project with Vertex AI enabled**: Create a project and enable the Vertex AI API.
+3. **Service Account**: Create a service account with necessary permissions.
+4. **Python 3.8+**: Ensure Python is installed.
 
 ## Setup Instructions
 
@@ -71,15 +73,15 @@ Image_generation/
 
 2. **Create a virtual environment** (recommended):
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On macOS/Linux
+   python3 -m venv .venv
+   source .venv/bin/activate  # On macOS/Linux
    # or
-   venv\Scripts\activate     # On Windows
+   .venv\Scripts\activate     # On Windows
    ```
 
 3. **Install dependencies**:
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
 
 4. **Configure environment variables**:
@@ -120,8 +122,7 @@ Image_generation/
 Run the main pipeline to generate images from all characteristics in the JSON file:
 
 ```bash
-cd src
-python main.py
+python src/main.py
 ```
 
 ### Banana Pipeline: Generate Variations from Base Faces
@@ -129,8 +130,7 @@ python main.py
 Generate variations of base face images with different feature modifications:
 
 ```bash
-cd src
-python banana_pipeline.py
+python src/banana_pipeline.py
 ```
 
 **How it works**:
@@ -147,7 +147,7 @@ python banana_pipeline.py
 
 ```bash
 export TEST_FEATURE="hair_color"
-python banana_pipeline.py
+python src/banana_pipeline.py
 ```
 
 This generates variations only for the specified feature.
@@ -157,13 +157,13 @@ This generates variations only for the specified feature.
 Run the base-face evaluator (counts + base-only scenario summaries):
 
 ```bash
-python src/evaluate_base_faces.py --model-folder llave_next
+python src/evaluate_base_faces.py --model-folder llava_next
 ```
 
 Run the full evaluator to compute paired base-vs-variation effects:
 
 ```bash
-python src/evaluate_mllm_outputs.py --model-folder llave_next
+python src/evaluate_mllm_outputs.py --model-folder llava_next
 ```
 
 Or evaluate all available model folders:
@@ -339,7 +339,7 @@ Edit [config/variation_features.json](config/variation_features.json) to define 
 
 ### Output Structure
 
-**Main Pipeline** saves to `output/images/`:
+**Main Pipeline** saves to `output/images/` by default:
 - **Images**: `face_1_20251222_143022_a3f9b2c1.png`
 - **Metadata**: `face_1_20251222_143022_a3f9b2c1_metadata.json`
 
@@ -377,9 +377,8 @@ Google Cloud has usage limits. If you hit quota limits:
 
 If you get import errors:
 ```bash
-# Make sure you're in the src directory
-cd src
-python main.py
+# Run from the repository root
+python src/main.py
 ```
 
 ### Rate Limiting / API Quota
@@ -415,9 +414,19 @@ print(prompt)
 **Banana pipeline - test single feature**:
 ```bash
 export TEST_FEATURE="hair_color"
-cd src
-python banana_pipeline.py
+python src/banana_pipeline.py
 ```
+
+## Repository Hygiene
+
+Before publishing the repository publicly, keep the following out of version control:
+
+- Local secrets and credentials in `keys/` and `.env`
+- Generated image and evaluation outputs under `output/`
+- Local model assets in `src/LMML_models/`
+- Interpreter caches such as `__pycache__/` and `.venv/`
+
+The repository's `.gitignore` is configured for these generated artifacts and local-only files.
 
 ## License
 

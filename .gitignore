@@ -22,11 +22,23 @@ keys/
 *.key
 
 # Generated outputs (images + metadata)
-output/judgements/
 output/images/
+output/judgements/
+output/base_faces/
 output/final_dataset/
 output/evaluation/
 output/banana/
+output/hf_dataset
+src/LMML_models/
+
+# Root-level generated artifacts
+output/*.png
+output/*.jpg
+output/*.jpeg
+output/*.pdf
+output/*.csv
+output/*.json
+output/*.txt
 
 # Large generated artifacts (safety nets)
 **/probability_scores.json
@@ -34,8 +46,9 @@ output/banana/
 **/variation_impact_summary.json
 **/variation_impact_summary.csv
 
-faces_to_judge/
+output/final_dataset/
 base_faces/
+faces_to_judge/
 
 # IDE
 .vscode/

@@ -1,3 +1,5 @@
+"""Run multimodal model judgements over the generated face-image datasets."""
+
 import argparse
 import json
 import os
@@ -306,6 +308,44 @@ def write_result(
         json.dump(result, f, ensure_ascii=False, indent=2)
 
 
+def _folder_started_and_incomplete(
+    face_folder: Path,
+    metadata_files: List[Path],
+    output_root: Path,
+    scenarios: List[Scenario],
+    seeds: tuple[int, ...],
+    base_gender: str | None,
+) -> tuple[bool, bool]:
+    """Return (has_started, has_pending_outputs) for a face folder."""
+    folder_output_root = output_root / face_folder.name
+    has_started = folder_output_root.exists() and any(folder_output_root.rglob("*.json"))
+
+    for metadata_path in metadata_files:
+        metadata = load_metadata(metadata_path)
+        characteristics = metadata.get("characteristics", {})
+        if should_skip_variation(characteristics, base_gender):
+            continue
+
+        base_name = metadata_path.stem.replace("_metadata", "")
+        variation_dir = output_root / face_folder.name / base_name
+
+        for scenario_index, scenario in enumerate(scenarios, start=1):
+            variants = build_prompt_variants(scenario.option_a, scenario.option_b)
+            for variant in variants:
+                for seed in seeds:
+                    output_path = build_output_path(
+                        variation_dir,
+                        base_name,
+                        scenario_index,
+                        variant.order_id,
+                        seed,
+                    )
+                    if not output_path.exists():
+                        return has_started, True
+
+    return has_started, False
+
+
 def run_pipeline(
     faces_root: Path,
     scenarios_path: Path,
@@ -316,15 +356,17 @@ def run_pipeline(
     max_workers: int = 8,
     max_unknown_retries: int = 2,
     unknown_retry_delay_seconds: float = 0.0,
+    only_partial_folders: bool = False,
 ) -> None:
     face_folders = find_face_folders(faces_root)
     if not face_folders:
         raise FileNotFoundError(f"No face folders found in {faces_root}")
 
     scenarios = load_scenarios(scenarios_path)
+    seed_values = tuple(seeds)
     total_folders = len(face_folders)
     total_scenarios = len(scenarios)
-    total_seeds = len(list(seeds))
+    total_seeds = len(seed_values)
 
     for folder_index, face_folder in enumerate(face_folders, start=1):
         metadata_files = list_metadata_files(face_folder, max_images=max_images)
@@ -345,6 +387,22 @@ def run_pipeline(
             base_gender = str(
                 base_characteristics.get("gender", "")
             ).strip().lower()
+
+        if only_partial_folders:
+            has_started, has_pending = _folder_started_and_incomplete(
+                face_folder=face_folder,
+                metadata_files=metadata_files,
+                output_root=output_root,
+                scenarios=scenarios,
+                seeds=seed_values,
+                base_gender=base_gender,
+            )
+            if not has_started:
+                print(f"Skipping {face_folder.name} (not started yet)")
+                continue
+            if not has_pending:
+                print(f"Skipping {face_folder.name} (already complete)")
+                continue
 
         print(f"[{folder_index}/{total_folders}] Processing {face_folder.name}")
 
@@ -380,7 +438,7 @@ def run_pipeline(
                     scenario.option_a, scenario.option_b
                 )
                 for variant in variants:
-                    for seed in seeds:
+                    for seed in seed_values:
                         output_path = build_output_path(
                             variation_dir,
                             base_name,
@@ -616,7 +674,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Run judgement pipeline over base and variation faces.")
     parser.add_argument("--model", default=os.getenv("JUDGE_MODEL_TYPE", "gemma3"), help="Model backend: gemma4, gemma3, vllm, pixtral, phi-4, phi4, llava, ollama, dummy")
-    parser.add_argument("--faces-root", default=os.getenv("JUDGEMENT_FACES_ROOT", "faces_to_judge"), help="Root folder with face folders")
+    parser.add_argument("--faces-root", default=os.getenv("JUDGEMENT_FACES_ROOT", "output/final_dataset"), help="Root folder with face folders")
     parser.add_argument("--scenarios-path", default=os.getenv("JUDGEMENT_SCENARIOS_PATH", "config/judgement_scenarios.json"), help="Path to scenario JSON")
     parser.add_argument("--output-root", default=os.getenv("JUDGEMENT_OUTPUT_ROOT", "output/judgements"), help="Root output folder")
     parser.add_argument("--output-subdir", default=os.getenv("JUDGE_OUTPUT_SUBDIR", ""), help="Optional output subfolder override")
@@ -624,6 +682,12 @@ def main() -> None:
     parser.add_argument("--max-workers", type=int, default=0, help="Worker count override (0 = use env/default)")
     parser.add_argument("--max-unknown-retries", type=int, default=int(os.getenv("JUDGEMENT_MAX_UNKNOWN_RETRIES", "2")), help="Retries if model output cannot be parsed as (a)/(b)")
     parser.add_argument("--unknown-retry-delay", type=float, default=float(os.getenv("JUDGEMENT_UNKNOWN_RETRY_DELAY_SECONDS", "0")), help="Delay in seconds between unknown retries")
+    parser.add_argument(
+        "--only-partial-folders",
+        action="store_true",
+        default=os.getenv("JUDGEMENT_ONLY_PARTIAL_FOLDERS", "").strip().lower() in {"1", "true", "yes", "on"},
+        help="Process only folders that were started already but still have missing judgement outputs.",
+    )
     args = parser.parse_args()
 
     faces_root = Path(args.faces_root)
@@ -654,6 +718,7 @@ def main() -> None:
         max_workers=max_workers,
         max_unknown_retries=args.max_unknown_retries,
         unknown_retry_delay_seconds=args.unknown_retry_delay,
+        only_partial_folders=args.only_partial_folders,
     )
 
 

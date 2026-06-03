@@ -1,3 +1,5 @@
+"""Summarize base-face demographic counts from the final dataset."""
+
 import json
 from collections import Counter
 from pathlib import Path

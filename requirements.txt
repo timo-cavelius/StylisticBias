@@ -9,3 +9,4 @@ scipy>=1.11.0
 torch>=2.1.0
 transformers>=4.39.0
 accelerate>=0.27.0
+mlcroissant>=1.1.0

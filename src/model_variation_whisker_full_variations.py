@@ -25,13 +25,14 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.lines import Line2D
 
 
-MODEL_ORDER = ["gemma3", "gemma4", "llava_next", "pixtral", "qwen3"]
+MODEL_ORDER = ["gemma3", "gemma4", "llava_next", "pixtral", "qwen3", "internvl"]
 MODEL_DISPLAY = {
     "gemma3": "Gemma 3",
     "gemma4": "Gemma 4",
     "llava_next": "LLaVA 1.6",
     "pixtral": "Pixtral",
     "qwen3": "Qwen 3",
+    "internvl": "InternVL",
 }
 
 # Publication-friendly, colorblind-safe palette.
@@ -41,6 +42,7 @@ MODEL_COLORS = {
     "llava_next": "#009E73",
     "pixtral": "#CC79A7",
     "qwen3": "#56B4E9",
+    "internvl": "#D55E00",
 }
 
 CATEGORY_ORDER = [
@@ -65,7 +67,7 @@ CATEGORY_DISPLAY = {
     "hair_style": "Hair style",
     "facial_hair_male": "Facial hair",
     "makeup_female": "Makeup",
-    "lip_makeup_female": "Lip makeup",
+    "lip_makeup_female": "Lip\nmakeup",
     "tattoos": "Tattoos",
     "fashion_style": "Fashion",
     "eyewear": "Eyewear",
@@ -74,6 +76,18 @@ CATEGORY_DISPLAY = {
 }
 
 GENDERS = ["female", "male"]
+
+# Centralized font controls for quick tuning.
+FONT_GROUP_LABEL = 13
+FONT_Y_LABEL = 23
+FONT_PANEL_TITLE = 26
+FONT_Y_TICKS = 18
+FONT_X_TICKS = 18
+FONT_X_LABEL = 23
+FONT_SUPTITLE = 28
+FONT_SUBTITLE = 16
+FONT_LEGEND = 19
+FONT_FOOTNOTE = 19
 
 SIGNED_Y_CMAP = LinearSegmentedColormap.from_list(
     "signed_y_bg",
@@ -86,9 +100,22 @@ def _available_models(evaluation_root: Path, requested: list[str] | None) -> lis
         return requested
 
     selected = []
+    extras = []
     for model in MODEL_ORDER:
         if (evaluation_root / model / "paired_deltas.csv").exists():
             selected.append(model)
+
+    for entry in sorted(evaluation_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("model_comparison"):
+            continue
+        if entry.name in selected:
+            continue
+        if (entry / "paired_deltas.csv").exists():
+            extras.append(entry.name)
+
+    selected.extend(extras)
     return selected
 
 
@@ -118,6 +145,12 @@ def _format_variation_label(variation_name: str) -> str:
     cat_display = CATEGORY_DISPLAY.get(category, category.replace("_", " ").title())
     if not value:
         return cat_display
+
+    if category == "fashion_style":
+        if "/" in value:
+            value = value.split("/", 1)[1].strip()
+        return value.lower()
+
     return value
 
 
@@ -264,28 +297,81 @@ def _category_spans(variations: list[str]) -> list[tuple[str, int, int]]:
     return spans
 
 
+def _identify_gender_variations(
+    summary: dict[str, dict[str, dict[str, tuple[float, float, float, int]]]],
+    models: list[str],
+    all_variations: list[str],
+) -> tuple[set[str], set[str]]:
+    """Identify which variations have data for each gender."""
+    female_vars = set()
+    male_vars = set()
+    
+    for model in models:
+        for variation in all_variations:
+            mean_f, _, _, n_f = summary[model]["female"][variation]
+            mean_m, _, _, n_m = summary[model]["male"][variation]
+            if n_f > 0 and np.isfinite(mean_f):
+                female_vars.add(variation)
+            if n_m > 0 and np.isfinite(mean_m):
+                male_vars.add(variation)
+    
+    return female_vars, male_vars
+
+
+def _organize_variations_by_gender(
+    all_variations: list[str],
+    female_vars: set[str],
+    male_vars: set[str],
+) -> dict[str, dict]:
+    """Organize variations so shared items align across both panels."""
+    shared = [v for v in all_variations if v in female_vars and v in male_vars]
+    female_only = [v for v in all_variations if v in female_vars and v not in male_vars]
+    male_only = [v for v in all_variations if v in male_vars and v not in female_vars]
+    
+    return {
+        "female_variations": shared + female_only,
+        "male_variations": shared + male_only,
+        "shared_count": len(shared),
+        "female_only_count": len(female_only),
+        "male_only_count": len(male_only),
+    }
+
+
 def plot(
     summary: dict[str, dict[str, dict[str, tuple[float, float, float, int]]]],
     models: list[str],
     variations: list[str],
     output_path: Path,
 ) -> None:
-    n_var = len(variations)
-    x = np.arange(n_var)
-
+    # Identify which variations exist for each gender and reorganize them.
+    female_vars, male_vars = _identify_gender_variations(summary, models, variations)
+    org = _organize_variations_by_gender(variations, female_vars, male_vars)
+    
+    female_variations = org["female_variations"]
+    male_variations = org["male_variations"]
+    n_var_female = len(female_variations)
+    n_var_male = len(male_variations)
+    n_var = max(n_var_female, n_var_male)
+    
     fig_width = max(18.0, 0.46 * n_var + 8.5)
-    fig, axes = plt.subplots(2, 1, figsize=(fig_width, 15.75), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(fig_width, 15.75), sharex=False)
 
     y_min, y_max = _compute_y_limits(summary, models, variations)
-    x_min, x_max = -0.7, n_var - 0.3
-
+    
     y_gradient = np.linspace(0.0, 1.0, 512).reshape(-1, 1)
-
     offsets = np.linspace(-0.28, 0.28, max(1, len(models)))
 
     for panel_idx, gender in enumerate(GENDERS):
         ax = axes[panel_idx]
         ax.set_facecolor("#FCFCFD")
+        
+        gender_variations = female_variations if gender == "female" else male_variations
+        x = np.arange(len(gender_variations))
+        x_min, x_max = -0.7, n_var - 0.3
+        
+        shared_count = org["shared_count"]
+        female_only_count = org["female_only_count"]
+        male_only_count = org["male_only_count"]
 
         # Signed interpretation background on y-axis (negative red, positive green).
         ax.imshow(
@@ -295,22 +381,28 @@ def plot(
             origin="lower",
             aspect="auto",
             interpolation="bicubic",
-            alpha=0.50,
+            alpha=0.60,
             zorder=-4,
         )
 
-        # Category group boxes with light labels at top, to make grouping explicit.
+        # Category group boxes with alternating shades for stronger visual grouping.
         top_y = y_max - 0.06 * (y_max - y_min)
-        for category, start_idx, end_idx in _category_spans(variations):
+        for group_idx, (category, start_idx, end_idx) in enumerate(_category_spans(gender_variations)):
             left = start_idx - 0.5
             right = end_idx + 0.5
+            if group_idx % 2 == 0:
+                span_color = "#EAF0F3"
+                span_alpha = 0.35
+            else:
+                span_color = "#F4F7F9"
+                span_alpha = 0.1
             ax.axvspan(
                 left,
                 right,
-                facecolor="#EFF2F5",
+                facecolor=span_color,
                 edgecolor="#C6CCD3",
                 linewidth=0.9,
-                alpha=0.25,
+                alpha=span_alpha,
                 zorder=-2,
             )
             ax.text(
@@ -319,14 +411,36 @@ def plot(
                 CATEGORY_DISPLAY.get(category, category.replace("_", " ").title()),
                 ha="center",
                 va="top",
-                fontsize=9.5,
+                fontsize=FONT_GROUP_LABEL,
                 color="#9AA2AB",
                 zorder=-1,
             )
 
         # Category separators.
-        for boundary in _category_boundaries(variations):
+        for boundary in _category_boundaries(gender_variations):
             ax.axvline(boundary - 0.5, color="#C6CBD1", linewidth=0.9, alpha=0.85, zorder=0)
+        
+        # Separator line before gender-specific variations (if any exist).
+        if gender == "female" and female_only_count > 0 and shared_count > 0:
+            ax.axvline(
+                shared_count - 0.5,
+                color="#7A7A7A",
+                linewidth=2.0,
+                alpha=0.6,
+                linestyle="--",
+                zorder=2,
+                label="Female-specific →",
+            )
+        elif gender == "male" and male_only_count > 0 and shared_count > 0:
+            ax.axvline(
+            shared_count - 0.5,
+                color="#7A7A7A",
+                linewidth=2.0,
+                alpha=0.6,
+                linestyle="--",
+                zorder=2,
+                label="Male-specific →",
+            )
 
         ax.axhline(0.0, color="#2D2D2D", linewidth=1.2, alpha=0.9, zorder=1)
 
@@ -337,7 +451,7 @@ def plot(
             poss = []
             valid = []
 
-            for variation in variations:
+            for variation in gender_variations:
                 mean, neg, pos, n = summary[model][gender][variation]
                 means.append(mean)
                 negs.append(neg if np.isfinite(neg) else 0.0)
@@ -356,12 +470,12 @@ def plot(
                     means_arr[valid_mask],
                     yerr=np.vstack([neg_arr[valid_mask], pos_arr[valid_mask]]),
                     fmt="o",
-                    ms=4.6,
+                    ms=6.8,
                     mfc=color,
                     mec="white",
                     mew=0.6,
                     ecolor=color,
-                    elinewidth=1.15,
+                    elinewidth=1.95,
                     capsize=2.0,
                     alpha=0.95,
                     zorder=4,
@@ -377,22 +491,23 @@ def plot(
         ax.spines["left"].set_color("#A1A6AB")
         ax.spines["bottom"].set_color("#A1A6AB")
 
-        ax.set_ylabel("Delta shift", fontsize=11)
-        ax.set_title("Female" if gender == "female" else "Male", fontsize=14, weight="semibold", pad=10)
-        ax.tick_params(axis="y", labelsize=10)
+        ax.set_ylabel(r"Delta shift ($\Delta_i$)", fontsize=FONT_Y_LABEL, fontweight="bold")
+        ax.set_title("Female ♀" if gender == "female" else "Male ♂", fontsize=FONT_PANEL_TITLE, weight="semibold", pad=10)
+        ax.tick_params(axis="y", labelsize=FONT_Y_TICKS)
+        ax.tick_params(axis="x", labelbottom=True)
+        ax.set_xticks(np.arange(len(gender_variations)))
+        ax.set_xticklabels(
+            [_format_variation_label(v) for v in gender_variations],
+            rotation=75,
+            ha="right",
+            fontsize=FONT_X_TICKS,
+        )
 
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(
-        [_format_variation_label(v) for v in variations],
-        rotation=75,
-        ha="right",
-        fontsize=8.6,
-    )
-    axes[1].set_xlabel("Variation", fontsize=11, labelpad=10)
+    axes[1].set_xlabel("Variation", fontsize=FONT_X_LABEL, labelpad=10, fontweight="bold")
 
     fig.suptitle(
         "Variation-Level Delta Shifts Across Models, Split by Gender",
-        fontsize=18,
+        fontsize=FONT_SUPTITLE,
         weight="semibold",
         y=0.975,
     )
@@ -401,7 +516,7 @@ def plot(
         0.944,
         "Dot = mean delta. Lower whisker = tendency toward negative shifts. Upper whisker = tendency toward positive shifts.",
         ha="center",
-        fontsize=11,
+        fontsize=FONT_SUBTITLE,
         color="#4E4E4E",
     )
 
@@ -424,10 +539,10 @@ def plot(
     fig.legend(
         handles=handles,
         loc="lower center",
-        bbox_to_anchor=(0.5, 0.058),
+        bbox_to_anchor=(0.5, 0.015),
         ncol=max(1, len(models)),
         frameon=False,
-        fontsize=11,
+        fontsize=FONT_LEGEND,
         handlelength=2.0,
         columnspacing=1.4,
     )
@@ -437,7 +552,7 @@ def plot(
         0.014,
         "Signed background: red = negative-associated direction, green = positive-associated direction.",
         ha="center",
-        fontsize=10,
+        fontsize=FONT_FOOTNOTE,
         color="#666666",
     )
 
