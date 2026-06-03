@@ -181,7 +181,7 @@ Outputs are written to `output/evaluation/<model>/` and include:
 - `paired_delta_statistics.json` (mean/std, paired t-test, Wilcoxon, Cohen's d)
 - `delta_histogram_overall.png` and `summary.txt`
 
-### Judgement Pipeline: Switch Models (including RunPod vLLM)
+### Judgement Pipeline: Switch Models
 
 You can now switch judgement backends with one flag:
 
@@ -209,37 +209,10 @@ Useful optional flags:
 ```bash
 python src/judgement_pipeline.py \
    --model vllm \
-   --output-subdir gemma3_12b_runpod \
+   --output-subdir gemma3_12b \
    --max-workers 8
 ```
 
-RunPod vLLM environment variables:
-
-```bash
-export JUDGE_MODEL_TYPE=vllm
-export VLLM_BASE_URL="https://<your-runpod-endpoint>"
-export VLLM_MODEL_ID="google/gemma-3-12b-it"
-export VLLM_API_KEY="<optional-if-endpoint-requires-it>"
-export VLLM_CHAT_COMPLETIONS_PATH="/v1/chat/completions"  # optional override
-export VLLM_TEMPERATURE=0.2
-export VLLM_MAX_TOKENS=16
-export VLLM_TIMEOUT_SECONDS=120
-export VLLM_MAX_RETRIES=5
-```
-
-RunPod Pixtral environment variables (recommended for your pod):
-
-```bash
-export JUDGE_MODEL_TYPE=pixtral
-export PIXTRAL_BASE_URL="https://j1xx0ykqxf0gqw-8000.proxy.runpod.net"
-export PIXTRAL_MODEL_ID="mistralai/Pixtral-12B-2409"
-export PIXTRAL_API_KEY="<optional-if-endpoint-requires-it>"
-export PIXTRAL_CHAT_COMPLETIONS_PATH="/v1/chat/completions/render"  # Trelis/RunPod images endpoint
-export PIXTRAL_TEMPERATURE=0.2
-export PIXTRAL_MAX_TOKENS=16
-export PIXTRAL_TIMEOUT_SECONDS=120
-export PIXTRAL_MAX_RETRIES=5
-```
 
 Then run:
 
@@ -247,51 +220,6 @@ Then run:
 python src/judgement_pipeline.py --model pixtral --output-subdir pixtral
 ```
 
-RunPod/Trelis container checklist:
-- Set Docker command model flags for Pixtral.
-- Keep port `8000` exposed (or tunnel via SSH if you prefer).
-- Add `HUGGING_FACE_HUB_TOKEN` in pod environment variables when model access requires Hugging Face auth.
-- Use endpoint format: `https://<pod-id>-8000.proxy.runpod.net`.
-
-Recommended vLLM container launch flags for Pixtral on RunPod:
-
-```bash
---model mistralai/Pixtral-12B-2409 \
---tokenizer-mode mistral \
---limit-mm-per-prompt image=4 \
---max-model-len 16384 \
---port 8000
-```
-
-OpenAI-compatible request test (RunPod proxy):
-
-```bash
-curl --location 'https://j1xx0ykqxf0gqw-8000.proxy.runpod.net/v1/chat/completions' \
-   --header 'Content-Type: application/json' \
-   --header 'Authorization: Bearer <token-if-required>' \
-   --data '{
-      "model": "mistralai/Pixtral-12B-2409",
-      "messages": [
-         {
-            "role": "user",
-            "content": [
-               {"type": "text", "text": "Describe this image in detail please."},
-               {"type": "image_url", "image_url": {"url": "https://s3.amazonaws.com/cms.ipressroom.com/338/files/201808/5b894ee1a138352221103195_A680%7Ejogging-edit/A680%7Ejogging-edit_hero.jpg"}}
-            ]
-         }
-      ]
-   }'
-```
-
-Notes:
-- `VLLM_BASE_URL` can be either the base URL or a `/v1` URL.
-- If your server uses a non-standard route, set `VLLM_CHAT_COMPLETIONS_PATH` explicitly.
-- Outputs are written to `output/judgements/<output-subdir>/`.
-- If `--output-subdir` is not set, the default for vLLM is `vllm`.
-- If `--model pixtral` is used and `--output-subdir` is not set, the default is `pixtral`.
-- For this project pipeline, local face images are sent as base64 data URLs by the client, so you do not need public image URLs during batch judgement runs.
-- Some RunPod/Trelis images expose only `/v1/chat/completions/render`; the client now auto-tries both standard and `/render` routes.
-- Pixtral auth uses only `PIXTRAL_API_KEY` (it no longer falls back to `VLLM_API_KEY`) to avoid cross-pod credential mismatch.
 
 ### Customize Main Pipeline Characteristics
 
