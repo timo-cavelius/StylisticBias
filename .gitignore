@@ -1,18 +1,37 @@
-# Python
+# Python bytecode/cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Python build/test artifacts
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+site/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
 venv/
 env/
 ENV/
-.venv
+.Python
 
 # Environment variables
 .env
 
-# Credentials
+# Credentials and keys
 keys/
 *service-account*.json
 *service_account*.json
@@ -21,42 +40,24 @@ keys/
 *.pem
 *.key
 
-# Generated outputs (images + metadata)
-output/images/
-output/judgements/
-output/base_faces/
-output/final_dataset/
-output/evaluation/
-output/banana/
-output/hf_dataset
-src/LMML_models/
+# Generated datasets and pipeline outputs
+output/
+base_faces/
+faces_to_judge/
 
-# Root-level generated artifacts
-output/*.png
-output/*.jpg
-output/*.jpeg
-output/*.pdf
-output/*.csv
-output/*.json
-output/*.txt
-
-# Large generated artifacts (safety nets)
+# Large generated analysis artifacts (safety nets)
 **/probability_scores.json
 **/paired_deltas.json
 **/variation_impact_summary.json
 **/variation_impact_summary.csv
 
-output/final_dataset/
-base_faces/
-faces_to_judge/
-
-# IDE
+# IDE/editor
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db

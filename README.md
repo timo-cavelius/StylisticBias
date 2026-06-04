@@ -1,11 +1,16 @@
-# Image Generation Pipeline
+# StylisticBias
 
 A Python project for generating face images with Google Cloud Vertex AI and evaluating multimodal model judgements. It includes:
-- **Main pipeline**: Generate face images from structured characteristics in a JSON file
+- **Generation pipeline**: Generate face images from structured characteristics in a JSON file
 - **Banana pipeline**: Generate variations of base face images with configurable feature modifications
+- **Judgement pipeline**: Use a scenario list to run MLLM models over generated images and collect judgements
 - **Evaluation scripts**: Create statistics, tables, and plots for model comparison and analysis
 
 Generated outputs, local credentials, and model caches are intentionally excluded from version control so the repository can be published safely.
+
+## Abstract
+
+Multimodal large language models (MLLMs) are increasingly deployed in personally and societally consequential settings, yet the visual cues that shape how these models judge people remain poorly understood. Prior work often compares different (groups of) individuals, making it difficult to separate appearance effects from identity differences. We introduce StylisticBias, a controlled benchmark for evaluating attribute-level social bias in MLLMs. We generate 500 photorealistic base faces and create about 50 single-attribute variations per face, producing about 25K images. This design keeps identity fixed and changes one visual attribute at a time. It lets us measure how specific cues shift model judgments. We evaluate six MLLMs across 25 binary social judgment scenarios. We find that age and body type dominate identity-level effects, while fashion style and other visual cues drive the largest attribute-level shifts. We further find that about 15 attributes account for nearly 80% of the total variation, showing that bias is concentrated in a small set of visual cues. Sensitivity is strongest in judgments that are semantically aligned with appearance, especially socioeconomic and style-related judgments. We release StylisticBias as a benchmark for fine-grained bias evaluation in multimodal models.
 
 ## Features
 
@@ -14,6 +19,7 @@ Generated outputs, local credentials, and model caches are intentionally exclude
 - 🔄 **Unique Filenames**: Automatically generates unique filenames (UUID + timestamp) to prevent overwriting
 - 💾 **Metadata Tracking**: Saves metadata alongside each image including prompts and variations
 - 🌐 **Google Cloud Integration**: Uses Vertex AI Gemini models for high-quality image generation
+- 🧠 **MLLM Judgements**: Runs scenario-based image judgements with configurable model backends
 - 🔁 **Automatic Retry Logic**: Up to 5 automatic retry attempts per variation on API failure
 
 ## Project Structure
@@ -21,13 +27,17 @@ Generated outputs, local credentials, and model caches are intentionally exclude
 ```
 StylisticBias/
 ├── src/
-│   ├── main.py                  # Main image generation pipeline
-│   ├── banana_pipeline.py       # Variation generation pipeline
-│   ├── judgement_pipeline.py    # MLLM judgement runner
-│   ├── evaluate_base_faces.py    # Base-face evaluation
-│   ├── evaluate_mllm_outputs.py # Full evaluation / statistics pipeline
-│   ├── prompt_generator.py      # Prompt generation logic
-│   └── image_saver.py           # Image saving and metadata helpers
+│   ├── generation/
+│   │   ├── main.py              # Main image generation pipeline
+│   │   ├── banana_pipeline.py   # Variation generation pipeline
+│   │   ├── prompt_generator.py  # Prompt generation logic
+│   │   └── image_saver.py       # Image saving and metadata helpers
+│   ├── judgement/
+│   │   └── judgement_pipeline.py # MLLM judgement runner
+│   ├── evaluation/              # Evaluation and analysis scripts
+│   ├── other/
+│   │   └── create_croissant_metadata.py
+│   └── LMML_models/             # Local model backend implementations
 ├── config/
 │   ├── characteristics.json     # Base characteristics for main pipeline
 │   └── variation_features.json  # Feature variations for banana pipeline
@@ -122,7 +132,7 @@ StylisticBias/
 Run the main pipeline to generate images from all characteristics in the JSON file:
 
 ```bash
-python src/main.py
+python src/generation/main.py
 ```
 
 ### Banana Pipeline: Generate Variations from Base Faces
@@ -130,7 +140,7 @@ python src/main.py
 Generate variations of base face images with different feature modifications:
 
 ```bash
-python src/banana_pipeline.py
+python src/generation/banana_pipeline.py
 ```
 
 **How it works**:
@@ -147,7 +157,7 @@ python src/banana_pipeline.py
 
 ```bash
 export TEST_FEATURE="hair_color"
-python src/banana_pipeline.py
+python src/generation/banana_pipeline.py
 ```
 
 This generates variations only for the specified feature.
@@ -157,19 +167,19 @@ This generates variations only for the specified feature.
 Run the base-face evaluator (counts + base-only scenario summaries):
 
 ```bash
-python src/evaluate_base_faces.py --model-folder llava_next
+python src/evaluation/evaluate_base_faces.py --model-folder llava_next
 ```
 
 Run the full evaluator to compute paired base-vs-variation effects:
 
 ```bash
-python src/evaluate_mllm_outputs.py --model-folder llava_next
+python src/evaluation/evaluate_mllm_outputs.py --model-folder llava_next
 ```
 
 Or evaluate all available model folders:
 
 ```bash
-python src/evaluate_mllm_outputs.py --all-models
+python src/evaluation/evaluate_mllm_outputs.py --all-models
 ```
 
 Outputs are written to `output/evaluation/<model>/` and include:
@@ -186,11 +196,11 @@ Outputs are written to `output/evaluation/<model>/` and include:
 You can now switch judgement backends with one flag:
 
 ```bash
-python src/judgement_pipeline.py --model vllm
-python src/judgement_pipeline.py --model pixtral
-python src/judgement_pipeline.py --model phi-4
-python src/judgement_pipeline.py --model gemma4
-python src/judgement_pipeline.py --model gemma3
+python src/judgement/judgement_pipeline.py --model vllm
+python src/judgement/judgement_pipeline.py --model pixtral
+python src/judgement/judgement_pipeline.py --model phi-4
+python src/judgement/judgement_pipeline.py --model gemma4
+python src/judgement/judgement_pipeline.py --model gemma3
 ```
 
 Supported values for `--model` (or `JUDGE_MODEL_TYPE`):
@@ -207,7 +217,7 @@ Supported values for `--model` (or `JUDGE_MODEL_TYPE`):
 Useful optional flags:
 
 ```bash
-python src/judgement_pipeline.py \
+python src/judgement/judgement_pipeline.py \
    --model vllm \
    --output-subdir gemma3_12b \
    --max-workers 8
@@ -217,8 +227,10 @@ python src/judgement_pipeline.py \
 Then run:
 
 ```bash
-python src/judgement_pipeline.py --model pixtral --output-subdir pixtral
+python src/judgement/judgement_pipeline.py --model pixtral --output-subdir pixtral
 ```
+
+The judgement pipeline is modular: different MLLM backends (for example Gemma, vllm/pixtral, Phi-4, LLaVA, Ollama, or the `dummy` stub) can be selected via the `--model` flag or `JUDGE_MODEL_TYPE` environment variable, and additional backends can be added by implementing the judge interface in `src/judgement/judgement_pipeline.py`.
 
 
 ### Customize Main Pipeline Characteristics
@@ -306,7 +318,7 @@ Google Cloud has usage limits. If you hit quota limits:
 If you get import errors:
 ```bash
 # Run from the repository root
-python src/main.py
+python src/generation/main.py
 ```
 
 ### Rate Limiting / API Quota
@@ -324,16 +336,16 @@ Google Cloud Vertex AI charges per image generation. Check the [Vertex AI pricin
 
 ### Adding New Features
 
-- **Main pipeline prompts**: Edit [src/prompt_generator.py](src/prompt_generator.py)
-- **Banana pipeline prompts**: Edit functions in [src/banana_pipeline.py](src/banana_pipeline.py) like `build_face_prompt()` and `build_body_prompt()`
-- **Image saving**: Modify [src/image_saver.py](src/image_saver.py)
-- **Retry logic**: Adjust `call_model()` function parameters in [src/banana_pipeline.py](src/banana_pipeline.py)
+- **Main pipeline prompts**: Edit [src/generation/prompt_generator.py](src/generation/prompt_generator.py)
+- **Banana pipeline prompts**: Edit functions in [src/generation/banana_pipeline.py](src/generation/banana_pipeline.py) like `build_face_prompt()` and `build_body_prompt()`
+- **Image saving**: Modify [src/generation/image_saver.py](src/generation/image_saver.py)
+- **Retry logic**: Adjust `call_model()` function parameters in [src/generation/banana_pipeline.py](src/generation/banana_pipeline.py)
 
 ### Testing
 
 **Main pipeline - single test image**:
 ```python
-from prompt_generator import generate_prompt
+from src.generation.prompt_generator import generate_prompt
 
 prompt = generate_prompt({"age": "young", "gender": "female", "expression": "smiling"})
 print(prompt)
@@ -342,7 +354,7 @@ print(prompt)
 **Banana pipeline - test single feature**:
 ```bash
 export TEST_FEATURE="hair_color"
-python src/banana_pipeline.py
+python src/generation/banana_pipeline.py
 ```
 
 ## Repository Hygiene
@@ -351,18 +363,6 @@ Before publishing the repository publicly, keep the following out of version con
 
 - Local secrets and credentials in `keys/` and `.env`
 - Generated image and evaluation outputs under `output/`
-- Local model assets in `src/LMML_models/`
-- Interpreter caches such as `__pycache__/` and `.venv/`
-
-The repository's `.gitignore` is configured for these generated artifacts and local-only files.
-
-## Repository Hygiene
-
-Before publishing the repository publicly, keep the following out of version control:
-
-- Local secrets and credentials in `keys/` and `.env`
-- Generated image and evaluation outputs under `output/`
-- Local model assets in `src/LMML_models/`
 - Interpreter caches such as `__pycache__/` and `.venv/`
 
 The repository's `.gitignore` is configured for these generated artifacts and local-only files.
