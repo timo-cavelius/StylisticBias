@@ -1,9 +1,9 @@
 # StylisticBias
 
 A Python project for generating face images with Google Cloud Vertex AI and evaluating multimodal model judgements. It includes:
-- **Generation pipeline**: Generate face images from structured characteristics in a JSON file
-- **Banana pipeline**: Generate variations of base face images with configurable feature modifications
-- **Judgement pipeline**: Use a scenario list to run MLLM models over generated images and collect judgements
+- **Generation pipeline (Imagen 4)**: Generate face images from structured characteristics in a JSON file
+- **Banana pipeline (Nano Banana / Gemini 2.5 Flash Image)**: Generate variations of base face images with configurable feature modifications
+- **Judgement pipeline**: Use a scenario list to run MLLMs over generated images and collect judgements
 - **Evaluation scripts**: Create statistics, tables, and plots for model comparison and analysis
 
 Generated outputs, local credentials, and model caches are intentionally excluded from version control so the repository can be published safely.
@@ -18,7 +18,7 @@ Multimodal large language models (MLLMs) are increasingly deployed in personally
 - 📝 **JSON-Based Configuration**: Define characteristics and feature variations in easy-to-edit JSON formats
 - 🔄 **Unique Filenames**: Automatically generates unique filenames (UUID + timestamp) to prevent overwriting
 - 💾 **Metadata Tracking**: Saves metadata alongside each image including prompts and variations
-- 🌐 **Google Cloud Integration**: Uses Vertex AI Gemini models for high-quality image generation
+- 🌐 **Google Cloud Integration**: Uses Vertex AI Imagen 4 (main pipeline) and Gemini 2.5 Flash Image / Nano Banana (banana pipeline)
 - 🧠 **MLLM Judgements**: Runs scenario-based image judgements with configurable model backends
 - 🔁 **Automatic Retry Logic**: Up to 5 automatic retry attempts per variation on API failure
 
@@ -54,7 +54,7 @@ StylisticBias/
 
 1. **Google Cloud Account**: You need an active Google Cloud account.
 2. **Project with Vertex AI enabled**: Create a project and enable the Vertex AI API.
-3. **Service Account**: Create a service account with necessary permissions.
+3. **Google Cloud authentication**: Use either a service account key file or user login via Application Default Credentials.
 4. **Python 3.8+**: Ensure Python is installed.
 
 ## Setup Instructions
@@ -78,7 +78,7 @@ StylisticBias/
 
 1. **Clone or navigate to the project directory**:
    ```bash
-   cd /path/to/Image_generation
+   cd /path/to/StylisticBias
    ```
 
 2. **Create a virtual environment** (recommended):
@@ -104,30 +104,40 @@ StylisticBias/
    # Google Cloud
    GOOGLE_CLOUD_PROJECT_ID=your-project-id
    GOOGLE_CLOUD_LOCATION=us-central1
+   # Optional when using a service-account key file:
    GOOGLE_APPLICATION_CREDENTIALS=keys/vertex-sa.json
    
    # Main Pipeline
    OUTPUT_DIR=output/images
    CHARACTERISTICS_FILE=config/characteristics.json
-   MODEL_ID=gemini-2.5-flash-image
+   MODEL_ID=imagen-4.0-generate-001
    MAX_VARIATIONS=999
    
    # Banana Pipeline
    BANANA_BASE_FACES_DIR=base_faces
    BANANA_OUTPUT_ROOT=output/banana
    BANANA_FEATURES_FILE=config/variation_features.json
-   BANANA_MODEL_ID=gemini-2.5-flash-image
+   BANANA_MODEL_ID=gemini-2.5-flash-image   # Nano Banana
    BANANA_MAX_VARIATIONS=999
    TEST_FEATURE=                    # Optional: test single feature only
    ```
 
-5. **Place your service account key**:
-   - Save the downloaded JSON key file in the `keys/` directory
-   - Ensure `GOOGLE_APPLICATION_CREDENTIALS` points to `keys/vertex-sa.json`
+   Model usage in this repository:
+   - Main generation pipeline uses Imagen 4 (`imagen-4.0-generate-001`).
+   - Banana variation pipeline uses Nano Banana (`gemini-2.5-flash-image`).
+
+5. **Set up Google Cloud authentication (choose one)**:
+    - **Option A: Service account key file**
+       - Save the downloaded JSON key file in the `keys/` directory
+       - Ensure `GOOGLE_APPLICATION_CREDENTIALS` points to `keys/vertex-sa.json`
+    - **Option B: User login (no JSON key file)**
+       - Run `gcloud auth application-default login`
+       - Optionally also run `gcloud auth login` if your local setup requires it
+       - Keep `GOOGLE_APPLICATION_CREDENTIALS` unset when using this option
 
 ## Usage
 
-### Main Pipeline: Generate Images from Characteristics
+### Main Pipeline (Imagen 4): Generate Images from Characteristics
 
 Run the main pipeline to generate images from all characteristics in the JSON file:
 
@@ -135,7 +145,7 @@ Run the main pipeline to generate images from all characteristics in the JSON fi
 python src/generation/main.py
 ```
 
-### Banana Pipeline: Generate Variations from Base Faces
+### Banana Pipeline (Nano Banana / Gemini 2.5 Flash Image): Generate Variations from Base Faces
 
 Generate variations of base face images with different feature modifications:
 
@@ -161,6 +171,151 @@ python src/generation/banana_pipeline.py
 ```
 
 This generates variations only for the specified feature.
+
+### Customize Main Pipeline Characteristics
+
+Edit [config/characteristics.json](config/characteristics.json) to define your own face characteristics:
+
+```json
+{
+   "age": [
+      "young adult",
+      "adult",
+      "older adult"
+   ],
+   "gender": [
+      "male",
+      "female"
+   ],
+   "ethnicity": [
+      "Asian",
+      "African",
+      "European",
+      "Middle Eastern",
+      "Latino",
+      "South Asian"
+   ],
+   "skin_tone": [
+      "light",
+      "medium",
+      "dark"
+   ]
+}
+```
+
+### Customize Banana Pipeline Variations
+
+Edit [config/variation_features.json](config/variation_features.json) to define feature variations:
+
+```json
+{
+  "skin_irregularities": ["clear skin", "light acne", "freckles"],
+  "hair_color": ["black", "brown", "blonde", "red"],
+  "hair_length": ["short", "medium", "long"],
+  "hair_style": ["straight", "wavy", "curly"],
+  "eyewear": ["no glasses", "glasses", "sunglasses"],
+  "makeup_female": ["no makeup", "natural", "bold"],
+  "facial_hair_male": ["clean shaven", "stubble", "beard"],
+  "fashion_style": ["casual", "formal", "athletic"],
+  "accessories": ["none", "necklace", "scarf"]
+}
+```
+
+**Retry Behavior**:
+- Each variation attempt automatically retries up to 5 times on failure
+- Waits between attempts (exponential backoff: 1s, 2s, 4s, 8s, 16s max)
+- After 5 failed attempts, skips to the next variation
+- Logs all failed attempts for debugging
+
+### Output Structure
+
+**Main Pipeline** saves to `output/images/` by default:
+
+- **Images**: `face_1_20251222_143022_a3f9b2c1.png`
+- **Metadata**: `face_1_20251222_143022_a3f9b2c1_metadata.json`
+
+Metadata includes:
+
+- Original characteristics
+- Generated prompt
+- Timestamp
+- Image path
+
+**Banana Pipeline** saves to `output/banana/<base_face_name>/`:
+
+- Original base image and metadata
+- Generated variations with unique filenames prefixed by the variation type, for example:
+   - Face-focused: `<name>_face_<idx>_<timestamp>_<uuid>.png`
+   - Full-body: `<name>_body_<idx>_<timestamp>_<uuid>.png`
+- Metadata for each variation with prompt and feature changes
+
+### Judgement Pipeline Overview
+
+The judgement pipeline is the second half of the project: it runs MLLMs over the generated faces and turns their answers into evaluation tables.
+
+What it reads:
+- Scenario definitions from `config/judgement_scenarios.json` and the long/medium/short variants
+- Generated images under `output/banana/` or `output/final_dataset/`, depending on the run mode
+- Optional model-specific settings from environment variables or command-line flags
+
+Note: multiple scenario lists are provided (`judgement_scenarios_short.json`, `judgement_scenarios_medium.json`, `judgement_scenarios_long.json`) — choose the short/medium/long variant depending on how long you want runs to take.
+
+What it does:
+- Builds pairwise prompts for each scenario and image
+- Runs the selected MLLM backend over the image set
+- Writes raw per-judgement JSON files under `output/judgements/<model>/`
+- Stores one result per scenario, order, seed, and variation so the evaluation step can aggregate them later
+
+Runs are executed with multiple randomization settings for robustness: we use 4 different orders and 3 different random seeds (4 orders × 3 seeds) by default to compute stable statistics across permutations.
+
+Start the judgement pipeline with:
+
+```
+python src/judgement/judgement_pipeline.py
+```
+
+### Judgement Pipeline: Switch Models
+
+You can now switch judgement backends with one flag:
+
+```bash
+python src/judgement/judgement_pipeline.py --model vllm
+python src/judgement/judgement_pipeline.py --model pixtral
+python src/judgement/judgement_pipeline.py --model phi-4
+python src/judgement/judgement_pipeline.py --model gemma4
+python src/judgement/judgement_pipeline.py --model gemma3
+```
+
+Supported values for `--model` (or `JUDGE_MODEL_TYPE`):
+- `vllm` (OpenAI-compatible vLLM endpoint)
+- `pixtral` (OpenAI-compatible vLLM endpoint with Pixtral defaults)
+- `gemma4` (Vertex AI endpoint, output subdir defaults to `gemma4`)
+- `gemma3` (Vertex AI endpoint)
+- `phi-4` (Azure Foundry Phi-4)
+- `phi4` (local Phi-4 multimodal)
+- `llava`
+- `ollama`
+- `dummy`
+
+Other models can be added by implementing the judge interface in [src/judgement/judgement_pipeline.py](src/judgement/judgement_pipeline.py), then wiring the new backend into the model-selection logic so it can be chosen with a new `--model` value or `JUDGE_MODEL_TYPE` entry.
+
+Useful optional flags:
+
+```bash
+python src/judgement/judgement_pipeline.py \
+   --model vllm \
+   --output-subdir gemma3_12b \
+   --max-workers 8
+```
+
+
+Then run:
+
+```bash
+python src/judgement/judgement_pipeline.py --model pixtral --output-subdir pixtral
+```
+
+The judgement pipeline is modular: different MLLM backends (for example Gemma, vllm/pixtral, Phi-4, LLaVA, Ollama, or the `dummy` stub) can be selected via the `--model` flag or `JUDGE_MODEL_TYPE` environment variable.
 
 ### Evaluation Pipeline: Analyze MLLM Judgements
 
@@ -191,120 +346,27 @@ Outputs are written to `output/evaluation/<model>/` and include:
 - `paired_delta_statistics.json` (mean/std, paired t-test, Wilcoxon, Cohen's d)
 - `delta_histogram_overall.png` and `summary.txt`
 
-### Judgement Pipeline: Switch Models
+### Evaluation Overview
 
-You can now switch judgement backends with one flag:
+The evaluation step ingests the judgement outputs and produces concise, reproducible analysis artifacts. In short, it:
 
-```bash
-python src/judgement/judgement_pipeline.py --model vllm
-python src/judgement/judgement_pipeline.py --model pixtral
-python src/judgement/judgement_pipeline.py --model phi-4
-python src/judgement/judgement_pipeline.py --model gemma4
-python src/judgement/judgement_pipeline.py --model gemma3
-```
+- Aggregates per-model judgement probabilities at the face and variation level.
+- Computes paired deltas between variations and their base faces and summarizes effects by category.
+- Runs standard statistical tests (paired t-test, Wilcoxon, effect sizes) and produces tables and plots.
+- Writes human-readable CSV/JSON summaries and figures under `output/evaluation/<model>/` for downstream reporting.
 
-Supported values for `--model` (or `JUDGE_MODEL_TYPE`):
-- `vllm` (OpenAI-compatible vLLM endpoint)
-- `pixtral` (OpenAI-compatible vLLM endpoint with Pixtral defaults)
-- `gemma4` (Vertex AI endpoint, output subdir defaults to `gemma4`)
-- `gemma3` (Vertex AI endpoint)
-- `phi-4` (Azure Foundry Phi-4)
-- `phi4` (local Phi-4 multimodal)
-- `llava`
-- `ollama`
-- `dummy`
+Evaluation logic and helper scripts live under `src/evaluation/` and are intended to be reusable rather than tied to a single experiment configuration.
 
-Useful optional flags:
-
-```bash
-python src/judgement/judgement_pipeline.py \
-   --model vllm \
-   --output-subdir gemma3_12b \
-   --max-workers 8
-```
-
-
-Then run:
-
-```bash
-python src/judgement/judgement_pipeline.py --model pixtral --output-subdir pixtral
-```
-
-The judgement pipeline is modular: different MLLM backends (for example Gemma, vllm/pixtral, Phi-4, LLaVA, Ollama, or the `dummy` stub) can be selected via the `--model` flag or `JUDGE_MODEL_TYPE` environment variable, and additional backends can be added by implementing the judge interface in `src/judgement/judgement_pipeline.py`.
-
-
-### Customize Main Pipeline Characteristics
-
-Edit [config/characteristics.json](config/characteristics.json) to define your own face characteristics:
-
-```json
-[
-  {
-    "age": "young adult",
-    "gender": "female",
-    "ethnicity": "Asian",
-    "hair_color": "black",
-    "hair_style": "long straight",
-    "eye_color": "brown",
-    "skin_tone": "medium",
-    "facial_features": "oval face",
-    "expression": "smiling"
-  }
-]
-```
-
-### Customize Banana Pipeline Variations
-
-Edit [config/variation_features.json](config/variation_features.json) to define feature variations:
-
-```json
-{
-  "skin_irregularities": ["clear skin", "light acne", "freckles"],
-  "hair_color": ["black", "brown", "blonde", "red"],
-  "hair_length": ["short", "medium", "long"],
-  "hair_style": ["straight", "wavy", "curly"],
-  "eyewear": ["no glasses", "glasses", "sunglasses"],
-  "makeup_female": ["no makeup", "natural", "bold"],
-  "facial_hair_male": ["clean shaven", "stubble", "beard"],
-  "fashion_style": ["casual", "formal", "athletic"],
-  "accessories": ["none", "necklace", "scarf"]
-}
-```
-
-**Retry Behavior**:
-- Each variation attempt automatically retries up to 5 times on failure
-- Waits between attempts (exponential backoff: 1s, 2s, 4s, 8s, 16s max)
-- After 5 failed attempts, skips to the next variation
-- Logs all failed attempts for debugging
-
-### Output Structure
-
-**Main Pipeline** saves to `output/images/` by default:
-- **Images**: `face_1_20251222_143022_a3f9b2c1.png`
-- **Metadata**: `face_1_20251222_143022_a3f9b2c1_metadata.json`
-
-Metadata includes:
-- Original characteristics
-- Generated prompt
-- Timestamp
-- Image path
-
-**Banana Pipeline** saves to `output/banana/<base_face_name>/`:
-- Original base image
-- Original metadata
-- Generated variations:
-  - Face-focused: `<name>_face_<idx>.png`
-  - Full-body: `<name>_body_<idx>.png`
-- Metadata for each variation with prompt and feature changes
 
 ## Troubleshooting
 
 ### Authentication Errors
 
 If you get authentication errors:
-1. Verify `GOOGLE_APPLICATION_CREDENTIALS` path is correct
-2. Ensure the service account has "Vertex AI User" role
-3. Check that the Vertex AI API is enabled in your project
+1. If you use a key file: verify `GOOGLE_APPLICATION_CREDENTIALS` path is correct and the key exists
+2. If you use user login: run `gcloud auth application-default login` again
+3. Ensure the principal (service account or user) has the "Vertex AI User" role
+4. Check that the Vertex AI API is enabled in your project
 
 ### API Quota Errors
 
