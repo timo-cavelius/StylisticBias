@@ -61,3 +61,6 @@ faces_to_judge/
 # OS files
 .DS_Store
 Thumbs.db
+
+# GitHub Copilot / assistant instructions file (non-code)
+.github/copilot-instructions.md
