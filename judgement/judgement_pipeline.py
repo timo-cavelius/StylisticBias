@@ -13,7 +13,7 @@ from typing import Dict, Iterable, List, Set
 
 from dotenv import load_dotenv
 
-from src.LMML_models import (
+from models import (
     AzureFoundryPhi4Judge,
     DummyJudge,
     Gemma3Judge,

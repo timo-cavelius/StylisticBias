@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 from google.auth import default
 from google.auth.transport.requests import Request
 
-from src.generation.prompt_generator import generate_prompt
-from src.generation.image_saver import save_image, save_metadata
+from generation.prompt_generator import generate_prompt
+from generation.image_saver import save_image, save_metadata
 
 
 def load_characteristics(filepath):
