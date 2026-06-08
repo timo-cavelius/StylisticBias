@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from src.generation.image_saver import save_image, save_metadata
+from generation.image_saver import save_image, save_metadata
 
 
 def load_features(path: str) -> Dict[str, List[str]]:
