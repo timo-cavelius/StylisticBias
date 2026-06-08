@@ -44,6 +44,7 @@ Generation models: main pipeline uses Google Vertex AI Imagen 4; the variation p
 
 The judgement pipeline supports alternative scenario lists. Use `config/judgement_scenarios_short.json`, `config/judgement_scenarios_medium.json`, or `config/judgement_scenarios_long.json` to control run length and coverage.
 
+
 ## Quickstart
 
 Generate base faces:
@@ -74,6 +75,12 @@ python src/judgement/judgement_pipeline.py --model vllm --max-workers 8
 ## Dataset
 
 The final dataset has been uploaded to Hugging Face (placeholder): [stylistic-bias/stylistic-bias-dataset](https://huggingface.co/datasets/stylistic-bias/stylistic-bias-dataset).
+
+### Sample images
+
+![Sample face + variations](assets/sample_image_figure.png)
+
+Short description: the figure above shows one base face (left) and several single-attribute variations (right) used for paired comparisons. Each variation keeps identity fixed and modifies one visual cue (hair colour, makeup, eyewear, fashion), enabling per-attribute sensitivity analysis.
 
 ## Notes
 
