@@ -86,9 +86,8 @@ Please cite our work if you find it useful:
 ```bibtex
 @misc{stylisticbias2026,
   title = {StylisticBias: Open-set Benchmark for Attribute-Level Social Bias in Multimodal Models},
-  author = {Placeholder Author 1 and Placeholder Author 2 and Placeholder Author 3},
+  author = {Timo Cavelius, Shaghayegh Kolli, Prof. Jana Diesner, Samantha Dalal, Nafiseh Nikeghbal},
   year = {2026},
-  note = {Repository and benchmark release}
 }
 ```
 
