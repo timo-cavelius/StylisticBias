@@ -8,11 +8,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/timo-cavelius">Timo Cavelius</a> ·
   <a href="https://www.gov.sot.tum.de/hcc/team/shaghayegh-kolli/">Shaghayegh Kolli</a> ·
-  <a href="https://www.gov.sot.tum.de/hcc/team/jana-diesner/">Prof. Jana Diesner</a> ·
-  <a href="https://www.samantha-dalal.com">Samantha Dalal</a> ·
-  <a href="https://github.com/nafisenik">Nafiseh Nikeghbal</a>
+  <a href="https://github.com/timo-cavelius">Timo Cavelius</a> ·
+  <a href="https://github.com/nafisenik">Nafiseh Nikeghbal</a> .
+    <a href="https://www.samantha-dalal.com">Samantha Dalal</a> ·
+   <a href="https://www.gov.sot.tum.de/hcc/team/jana-diesner/">Jana Diesner</a> 
 </p>
 
 > **Abstract:** Multimodal large language models (MLLMs) are increasingly deployed in personally and societally consequential settings, yet the visual cues that shape how these models judge people remain poorly understood. Prior work often compares different (groups of) individuals, making it difficult to separate appearance effects from identity differences. We introduce StylisticBias, a controlled benchmark for evaluating attribute-level social bias in MLLMs. We generate 500 photorealistic base faces and create about 50 single-attribute variations per face, producing about 25K images. This design keeps identity fixed and changes one visual attribute at a time. It lets us measure how specific cues shift model judgments. We evaluate six MLLMs across 25 binary social judgment scenarios. We find that age and body type dominate identity-level effects, while fashion style and other visual cues drive the largest attribute-level shifts. We further find that about 15 attributes account for nearly 80% of the total variation, showing that bias is concentrated in a small set of visual cues. Sensitivity is strongest in judgments that are semantically aligned with appearance, especially socioeconomic and style-related judgments. We release StylisticBias as a benchmark for fine-grained bias evaluation in multimodal models.
