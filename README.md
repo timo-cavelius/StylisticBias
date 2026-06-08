@@ -80,7 +80,7 @@ The final dataset has been uploaded to Hugging Face (placeholder): [stylistic-bi
 
 ![Sample face + variations](assets/sample_image_figure.png)
 
-Short description: the figure above shows one base face (left) and several single-attribute variations (right) used for paired comparisons. Each variation keeps identity fixed and modifies one visual cue (hair colour, makeup, eyewear, fashion), enabling per-attribute sensitivity analysis.
+The figure above shows one base face (left) and several single-attribute variations (right) used for paired comparisons. Each variation keeps identity fixed and modifies one visual cue (hair colour, makeup, eyewear, fashion), enabling per-attribute sensitivity analysis.
 
 ## Notes
 
